@@ -1,0 +1,162 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens
+ * Type: SF Pro, weights 400/500, -0.15px tracking, sizes 12/13/14/24 only.
+ * Ink: #292929 (primary) · #5D5D5D (secondary) · #9E9E9E (tertiary).
+ * Radii: 8px navigation · 16px cards · pill CTAs.
+ */
+@theme {
+  --font-sans: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --text-*: initial;
+  --text-12: 12px;
+  --text-12--line-height: 16px;
+  --text-13: 13px;
+  --text-13--line-height: 18px;
+  --text-14: 14px;
+  --text-14--line-height: 20px;
+  --text-16: 16px;
+  --text-16--line-height: 20px;
+  --text-24: 24px;
+  --text-24--line-height: 28px;
+  --text-48: 48px;
+  --text-48--line-height: 48px;
+  --font-weight-*: initial;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --color-ink: #292929;
+  --color-ink-2: #5d5d5d;
+  --color-ink-3: #9e9e9e;
+  /* Light defaults so Tailwind generates utilities; per theme × palette values
+     come from src/lib/theme.ts (THEME_CSS). */
+  --color-line: rgba(41, 41, 41, 0.08);
+  --color-surface: #ffffff;
+  --color-canvas: #eef0f2;
+  --color-fill: rgba(41, 41, 41, 0.05);
+  --color-fill-strong: rgba(41, 41, 41, 0.09);
+  --color-todo: #f2b200;
+  --color-done: #2b6cf0;
+  --color-selected: #d6336c;
+  --radius-nav: 8px;
+  --radius-card: 16px;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  letter-spacing: -0.15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.surface {
+  background: var(--color-surface);
+  box-shadow:
+    0 0 0 1px var(--color-line),
+    0 8px 24px rgba(41, 41, 41, 0.08);
+}
+
+.maplibregl-ctrl-attrib {
+  font-size: 12px;
+  letter-spacing: -0.15px;
+}
+
+/* Pinch-zoom on phones, so the zoom buttons hide; the center-view button stays. */
+@media (max-width: 639px) {
+  .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group {
+    display: none;
+  }
+  .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group.maplibregl-ctrl-center-group {
+    display: block;
+  }
+}
+.maplibregl-ctrl-center {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-ink);
+}
+
+/* Browser surfaces, themed from the palette */
+::selection {
+  background: color-mix(in srgb, var(--color-done) 22%, transparent);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-done);
+  outline-offset: 2px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-fill-strong) transparent;
+}
+
+/* MapLibre controls follow the theme */
+.maplibregl-ctrl-group,
+.maplibregl-ctrl-attrib {
+  background: var(--color-surface) !important;
+  color: var(--color-ink-2);
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--color-ink-2);
+}
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--color-line) !important;
+}
+:root[data-theme='dark'] .maplibregl-ctrl-icon,
+:root[data-theme='dark'] .maplibregl-ctrl-attrib-button {
+  filter: invert(1);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'] .maplibregl-ctrl-icon,
+  :root[data-theme='system'] .maplibregl-ctrl-attrib-button {
+    filter: invert(1);
+  }
+}
+
+/* Phones: the cards sit inside the bottom sheet as flat sections, and the map's corner controls
+   ride above the sheet's lowest height instead of hiding under it. */
+@media (max-width: 639px) {
+  [data-sheet-header] > .surface,
+  [data-sheet-body] > .surface {
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+  }
+  [data-sheet-header] > .surface {
+    padding-top: 2px;
+  }
+  [data-sheet-body] > .surface {
+    border-top: 1px solid var(--color-line);
+  }
+  /* Scoped under .maplibregl-map to outrank MapLibre's own stylesheet, which loads later. */
+  .maplibregl-map .maplibregl-ctrl-bottom-right,
+  .maplibregl-map .maplibregl-ctrl-bottom-left {
+    bottom: var(--sheet-peek, 0px);
+  }
+}
+
+/* App icon: the light tile by default, the dark tile in dark mode (forced or system). */
+.logo-dark {
+  display: none;
+}
+:root[data-theme='dark'] .logo-light {
+  display: none;
+}
+:root[data-theme='dark'] .logo-dark {
+  display: block;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'] .logo-light {
+    display: none;
+  }
+  :root[data-theme='system'] .logo-dark {
+    display: block;
+  }
+}

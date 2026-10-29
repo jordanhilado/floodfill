@@ -1,0 +1,7 @@
+# Copy to .dev.vars and fill in.
+# Your Strava API app (strava.com/settings/api). Set its Authorization Callback Domain to
+# localhost for local development and to your domain in production.
+STRAVA_CLIENT_ID=
+STRAVA_CLIENT_SECRET=
+# Random string used to hash sign-in codes, e.g. `openssl rand -hex 32`.
+AUTH_SECRET=

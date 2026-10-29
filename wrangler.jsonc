@@ -1,0 +1,45 @@
+/**
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "floodfill",
+	"compatibility_date": "2026-10-23",
+	"compatibility_flags": ["nodejs_compat"],
+	// Custom entry: TanStack Start fetch handler + cron-driven Strava sync
+	"main": "src/server.ts",
+	"observability": { "enabled": true },
+	"routes": [{ "pattern": "floodfill.world", "custom_domain": true }],
+	// Kept on while floodfill.world takes over; turn off once the old links no longer matter.
+	"workers_dev": true,
+	"upload_source_maps": true,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "floodfill",
+			"database_id": "453b8788-0478-4e9e-be77-b2212fd8ec95",
+			// Local dev keeps using the database it was set up with before production existed.
+			"preview_database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	],
+	// Sign-in codes. Locally this is simulated (see /cdn-cgi/local/explorer); in production the
+	// sender domain must be onboarded: `wrangler email sending enable <domain>`.
+	"send_email": [{ "name": "EMAIL" }],
+	// Strava's 15-minute rate windows reset at :00/:15/:30/:45, so sync just after each.
+	"triggers": { "crons": ["1,16,31,46 * * * *"] },
+	"vars": {
+		// Standard-tier Strava limits. Overall: 400 / 15 min, 4,000 / day.
+		// Read (all GET endpoints): 200 / 15 min, 2,000 / day.
+		"STRAVA_LIMIT_15MIN": "400",
+		"STRAVA_LIMIT_DAILY": "4000",
+		"STRAVA_READ_LIMIT_15MIN": "200",
+		"STRAVA_READ_LIMIT_DAILY": "2000",
+		// Fraction of each limit this app may use, leaving headroom for other clients.
+		"STRAVA_BUDGET_FRACTION": "0.9",
+		// Sender for sign-in codes, on the onboarded sending domain.
+		"EMAIL_FROM": "login@floodfill.world"
+	}
+	// Secrets (put in .dev.vars locally, `wrangler secret put` in production):
+	// STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, AUTH_SECRET
+}

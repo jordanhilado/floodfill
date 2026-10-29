@@ -1,0 +1,14 @@
+import handler from '@tanstack/react-start/server-entry'
+import { runSync } from './server/sync'
+
+export default {
+  fetch: (request) => handler.fetch(request),
+
+  // Continues backfill and picks up new activities every 15 minutes, right after
+  // Strava's rate window resets. Cron invocations allow long wall-clock runs.
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(
+      runSync(env, { trigger: 'cron', timeBudgetMs: 5 * 60_000 }).then((r) => console.log('cron sync', JSON.stringify(r))),
+    )
+  },
+} satisfies ExportedHandler<Env>
