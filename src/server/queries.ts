@@ -1,54 +1,39 @@
+import type { ModeTotals } from '../../scripts/totals'
 import { CITIES, type CityId } from '../lib/cities'
+import sfTotals from '../lib/totals.sf.json'
 import type { Mode } from './coverage/apply'
 import { getState } from './db'
 import { stravaConfigured } from './strava/client'
-
-// Every query below is for one user. Signed-out visitors pass null and match nothing, so they
-// see the city with zero progress.
-const uid = (userId: string | null) => userId ?? ''
 import { RateLimiter } from './strava/rate-limit'
+
+// Every per-user query below is skipped for signed-out visitors (null), who see the city with zero
+// progress without touching D1.
+
+// Static totals of the street network, summed from the D1 seed at build time (scripts/totals.ts),
+// so page views don't scan `segments`. Regenerated whenever the seed is. JSON can't type the
+// `names` tuples, hence the cast; src/lib/totals.test.ts checks the file against the seed.
+const TOTALS = { sf: sfTotals } as unknown as Record<CityId, Record<Mode, ModeTotals>>
 
 export type CoverageData = Awaited<ReturnType<typeof getCoverageData>>
 
-type Totals = { meters: number; segments: number; streets: Map<string, number> }
-
 // "Full streets" only counts named streets; paths count toward distance only.
+// Must match NAMED_STREET in scripts/totals.ts.
 const NAMED_STREET = `kind = 'street' AND name IS NOT NULL`
-const totalsCache = new Map<string, Promise<Totals>>()
-
-function cityTotals(db: D1Database, city: CityId, mode: Mode) {
-  const key = `${city}:${mode}`
-  let p = totalsCache.get(key)
-  if (!p) {
-    p = db
-      .prepare(
-        `SELECT CASE WHEN ${NAMED_STREET} THEN name END AS street, COUNT(*) AS n, SUM(length_m) AS m
-         FROM segments WHERE city = ? AND ${mode} = 1 GROUP BY street`,
-      )
-      .bind(city)
-      .all<{ street: string | null; n: number; m: number }>()
-      .then(({ results }) => ({
-        meters: results.reduce((a, r) => a + r.m, 0),
-        segments: results.reduce((a, r) => a + r.n, 0),
-        streets: new Map(results.filter((r) => r.street !== null).map((r) => [r.street!, r.n])),
-      }))
-    p.catch(() => totalsCache.delete(key))
-    totalsCache.set(key, p)
-  }
-  return p
-}
 
 export async function getCoverageData(db: D1Database, city: CityId, mode: Mode, userId: string | null) {
-  const [totals, { results }] = await Promise.all([
-    cityTotals(db, city, mode),
-    db
-      .prepare(
-        `SELECT s.id, CASE WHEN s.${NAMED_STREET} THEN s.name END AS street, s.length_m FROM coverage c JOIN segments s ON s.id = c.segment_id
-         WHERE c.user_id = ? AND c.mode = ? AND c.completed = 1 AND s.city = ? AND s.${mode} = 1`,
-      )
-      .bind(uid(userId), mode, city)
-      .all<{ id: number; street: string | null; length_m: number }>(),
-  ])
+  const totals = TOTALS[city][mode]
+  const results =
+    userId === null
+      ? []
+      : (
+          await db
+            .prepare(
+              `SELECT s.id, CASE WHEN s.${NAMED_STREET} THEN s.name END AS street, s.length_m FROM coverage c JOIN segments s ON s.id = c.segment_id
+               WHERE c.user_id = ? AND c.mode = ? AND c.completed = 1 AND s.city = ? AND s.${mode} = 1`,
+            )
+            .bind(userId, mode, city)
+            .all<{ id: number; street: string | null; length_m: number }>()
+        ).results
 
   const doneByStreet = new Map<string, number>()
   let meters = 0
@@ -57,7 +42,7 @@ export async function getCoverageData(db: D1Database, city: CityId, mode: Mode, 
     if (r.street) doneByStreet.set(r.street, (doneByStreet.get(r.street) ?? 0) + 1)
   }
   let streetsCompleted = 0
-  for (const [name, n] of doneByStreet) if (totals.streets.get(name) === n) streetsCompleted++
+  for (const [name, n] of doneByStreet) if (Object.hasOwn(totals.streets, name) && totals.streets[name] === n) streetsCompleted++
 
   return {
     city,
@@ -66,7 +51,7 @@ export async function getCoverageData(db: D1Database, city: CityId, mode: Mode, 
     completedMeters: meters,
     percent: totals.meters ? (meters / totals.meters) * 100 : 0,
     totalSegments: totals.segments,
-    totalStreets: totals.streets.size,
+    totalStreets: Object.keys(totals.streets).length,
     streetsCompleted,
     completedIds: results.map((r) => r.id),
   }
@@ -76,27 +61,33 @@ export type SyncStatus = Awaited<ReturnType<typeof getSyncStatusData>>
 
 export async function getSyncStatusData(db: D1Database, env: Env, userId: string | null) {
   const [counts, lastRun, account, limiter, rematch] = await Promise.all([
-    db
-      .prepare(
-        `SELECT
-           COUNT(*) AS total,
-           SUM(status IN ('summary', 'detailed', 'error')) AS counted,
-           SUM(status = 'summary') AS awaiting_detail,
-           SUM(status = 'detailed') AS detailed,
-           SUM(status != 'ignored' AND mode = 'foot') AS foot,
-           SUM(status != 'ignored' AND mode = 'bike') AS bike
-         FROM activities WHERE user_id = ?`,
-      )
-      .bind(uid(userId))
-      .first<{ total: number; counted: number | null; awaiting_detail: number | null; detailed: number | null; foot: number | null; bike: number | null }>(),
-    db
-      .prepare('SELECT started_at, finished_at, stop_reason, error, requests FROM sync_runs WHERE user_id = ? ORDER BY id DESC LIMIT 1')
-      .bind(uid(userId))
-      .first<{ started_at: number; finished_at: number | null; stop_reason: string | null; error: string | null; requests: number }>(),
-    db
-      .prepare('SELECT athlete_id, backfill_done, last_sync_at FROM strava_accounts WHERE user_id = ?')
-      .bind(uid(userId))
-      .first<{ athlete_id: number; backfill_done: number; last_sync_at: number | null }>(),
+    userId === null
+      ? null
+      : db
+          .prepare(
+            `SELECT
+               COUNT(*) AS total,
+               SUM(status IN ('summary', 'detailed', 'error')) AS counted,
+               SUM(status = 'summary') AS awaiting_detail,
+               SUM(status = 'detailed') AS detailed,
+               SUM(status != 'ignored' AND mode = 'foot') AS foot,
+               SUM(status != 'ignored' AND mode = 'bike') AS bike
+             FROM activities WHERE user_id = ?`,
+          )
+          .bind(userId)
+          .first<{ total: number; counted: number | null; awaiting_detail: number | null; detailed: number | null; foot: number | null; bike: number | null }>(),
+    userId === null
+      ? null
+      : db
+          .prepare('SELECT started_at, finished_at, stop_reason, error, requests FROM sync_runs WHERE user_id = ? ORDER BY id DESC LIMIT 1')
+          .bind(userId)
+          .first<{ started_at: number; finished_at: number | null; stop_reason: string | null; error: string | null; requests: number }>(),
+    userId === null
+      ? null
+      : db
+          .prepare('SELECT athlete_id, backfill_done, last_sync_at FROM strava_accounts WHERE user_id = ?')
+          .bind(userId)
+          .first<{ athlete_id: number; backfill_done: number; last_sync_at: number | null }>(),
     RateLimiter.load(db, env),
     getState(db, 'rematch'),
   ])
@@ -124,38 +115,16 @@ export async function getSyncStatusData(db: D1Database, env: Env, userId: string
 
 export type NeighborhoodProgress = Awaited<ReturnType<typeof getNeighborhoodData>>[number]
 
-const hoodTotalsCache = new Map<string, Promise<Map<string, number>>>()
-
 /** Progress per neighborhood for one mode, highest completion first. */
 export async function getNeighborhoodData(db: D1Database, city: CityId, mode: Mode, userId: string | null) {
-  const key = `${city}:${mode}`
-  let totals = hoodTotalsCache.get(key)
-  if (!totals) {
-    totals = db
-      .prepare(
-        `SELECT neighborhood, SUM(length_m) AS m FROM segments
-         WHERE city = ? AND ${mode} = 1 AND neighborhood IS NOT NULL GROUP BY neighborhood`,
-      )
-      .bind(city)
-      .all<{ neighborhood: string; m: number }>()
-      .then(({ results }) => new Map(results.map((r) => [r.neighborhood, r.m])))
-    totals.catch(() => hoodTotalsCache.delete(key))
-    hoodTotalsCache.set(key, totals)
-  }
-  const [byHood, { results }] = await Promise.all([
-    totals,
-    db
-      .prepare(
-        `SELECT s.neighborhood, SUM(s.length_m) AS m FROM coverage c JOIN segments s ON s.id = c.segment_id
-         WHERE c.user_id = ? AND c.mode = ? AND c.completed = 1 AND s.city = ? AND s.${mode} = 1 AND s.neighborhood IS NOT NULL
-         GROUP BY s.neighborhood`,
-      )
-      .bind(uid(userId), mode, city)
-      .all<{ neighborhood: string; m: number }>(),
-  ])
-  const done = new Map(results.map((r) => [r.neighborhood, r.m]))
-  const activities = await activityCounts(db, city, mode, userId, 'neighborhood')
-  return [...byHood]
+  const [done, activities] =
+    userId === null
+      ? [new Map<string, number>(), new Map<string, number>()]
+      : await Promise.all([
+          completedMeters(db, city, mode, userId, 'neighborhood'),
+          activityCounts(db, city, mode, userId, 'neighborhood'),
+        ])
+  return Object.entries(TOTALS[city][mode].neighborhoods)
     .map(([name, totalMeters]) => {
       const completedMeters = done.get(name) ?? 0
       return {
@@ -170,79 +139,71 @@ export async function getNeighborhoodData(db: D1Database, city: CityId, mode: Mo
     .sort((a, b) => b.percent - a.percent || b.activities - a.activities || a.name.localeCompare(b.name))
 }
 
-/**
- * Distinct activities (of this mode) that touched each group: a neighborhood, or a street name.
- * `names` limits a street lookup to the rows being shown.
- */
-async function activityCounts(
-  db: D1Database,
-  city: CityId,
-  mode: Mode,
-  userId: string | null,
-  by: 'neighborhood' | 'name',
-  names?: string[],
-): Promise<Map<string, number>> {
-  if (names && names.length === 0) return new Map()
+// The two queries below start from the user's own rows (CROSS JOIN keeps that join order), so
+// they read only what this user has done rather than every segment in the city.
+
+/** Meters completed in each group: a neighborhood, or a street name. */
+async function completedMeters(db: D1Database, city: CityId, mode: Mode, userId: string, by: 'neighborhood' | 'name') {
+  const { results } = await db
+    .prepare(
+      `SELECT s.${by} AS k, SUM(s.length_m) AS m
+       FROM coverage c
+       CROSS JOIN segments s ON s.id = c.segment_id
+       WHERE c.user_id = ? AND c.mode = ? AND c.completed = 1 AND s.city = ? AND s.${mode} = 1 AND s.${by} IS NOT NULL
+       GROUP BY s.${by}`,
+    )
+    .bind(userId, mode, city)
+    .all<{ k: string; m: number }>()
+  return new Map(results.map((r) => [r.k, r.m]))
+}
+
+/** Distinct activities (of this mode) that touched each group: a neighborhood, or a street name. */
+async function activityCounts(db: D1Database, city: CityId, mode: Mode, userId: string, by: 'neighborhood' | 'name') {
   const { results } = await db
     .prepare(
       `SELECT s.${by} AS k, COUNT(DISTINCT a.activity_id) AS n
-       FROM activity_segments a
-       JOIN segments s ON s.id = a.segment_id
-       JOIN activities act ON act.id = a.activity_id
+       FROM activities act
+       CROSS JOIN activity_segments a ON a.activity_id = act.id
+       CROSS JOIN segments s ON s.id = a.segment_id
        WHERE act.user_id = ? AND act.mode = ? AND s.city = ? AND s.${mode} = 1 AND s.${by} IS NOT NULL
-       ${names ? `AND s.${by} IN (${names.map(() => '?').join(',')})` : ''}
        GROUP BY s.${by}`,
     )
-    .bind(uid(userId), mode, city, ...(names ?? []))
+    .bind(userId, mode, city)
     .all<{ k: string; n: number }>()
   return new Map(results.map((r) => [r.k, r.n]))
 }
 
 export type RankSort = 'progress' | 'activities'
 
-// Every named street or path in this mode, with distance done, activities, and its rank:
-// by progress then activities (default), or by activities then progress.
-const RANKED_STREETS = (mode: Mode, sort: RankSort) => `
-  WITH acts AS (
-    SELECT s.name AS name, COUNT(DISTINCT a.activity_id) AS n
-    FROM activity_segments a
-    JOIN segments s ON s.id = a.segment_id
-    JOIN activities act ON act.id = a.activity_id
-    WHERE act.user_id = ?3 AND act.mode = ?1 AND s.city = ?2 AND s.${mode} = 1 AND s.name IS NOT NULL
-    GROUP BY s.name
-  ),
-  st AS (
-    SELECT s.name AS name,
-           SUM(s.length_m) AS total,
-           SUM(CASE WHEN c.completed = 1 THEN s.length_m ELSE 0 END) AS done,
-           MIN(s.min_lng) AS x0, MIN(s.min_lat) AS y0, MAX(s.max_lng) AS x1, MAX(s.max_lat) AS y1,
-           MAX(s.kind = 'street') AS is_street
-    FROM segments s LEFT JOIN coverage c ON c.segment_id = s.id AND c.mode = ?1 AND c.user_id = ?3
-    WHERE s.city = ?2 AND s.${mode} = 1 AND s.name IS NOT NULL
-    GROUP BY s.name
+/**
+ * Every named street or path in this mode, with distance done, activities, and its rank:
+ * by progress then activities (default), or by activities then progress.
+ */
+async function rankStreets(db: D1Database, city: CityId, mode: Mode, userId: string | null, sort: RankSort) {
+  const [done, acts] =
+    userId === null
+      ? [new Map<string, number>(), new Map<string, number>()]
+      : await Promise.all([completedMeters(db, city, mode, userId, 'name'), activityCounts(db, city, mode, userId, 'name')])
+  const rows = TOTALS[city][mode].names.map(([name, total, x0, y0, x1, y1, isStreet]) => ({
+    name,
+    total,
+    done: done.get(name) ?? 0,
+    activities: acts.get(name) ?? 0,
+    bbox: [x0, y0, x1, y1] as [number, number, number, number],
+    path: isStreet === 0,
+  }))
+  const progress = (r: (typeof rows)[number]) => r.done / r.total
+  // Names come in SQLite's BINARY order and the sort is stable, so ties end ordered by name.
+  rows.sort((a, b) =>
+    sort === 'activities'
+      ? b.activities - a.activities || progress(b) - progress(a) || b.done - a.done
+      : progress(b) - progress(a) || b.activities - a.activities || b.done - a.done,
   )
-  SELECT st.*, COALESCE(acts.n, 0) AS activities,
-         ROW_NUMBER() OVER (ORDER BY ${
-           sort === 'activities'
-             ? 'COALESCE(acts.n, 0) DESC, st.done / st.total DESC'
-             : 'st.done / st.total DESC, COALESCE(acts.n, 0) DESC'
-         }, st.done DESC, st.name) AS rank,
-         COUNT(*) OVER () AS ranked
-  FROM st LEFT JOIN acts ON acts.name = st.name`
-
-type StreetRow = {
-  name: string
-  total: number
-  done: number
-  x0: number
-  y0: number
-  x1: number
-  y1: number
-  is_street: number
-  activities: number
-  rank: number
-  ranked: number
+  return rows.map((r, i) => ({ ...r, rank: i + 1 }))
 }
+
+// SQLite's LIKE: a substring match that ignores case for ASCII letters only.
+const likeFold = (s: string) => s.replace(/[A-Z]/g, (c) => c.toLowerCase())
 
 export type StreetProgressRow = Awaited<ReturnType<typeof getStreetPage>>['rows'][number]
 
@@ -254,39 +215,26 @@ export async function getStreetPage(
   userId: string | null,
   { q, offset, limit, sort }: { q: string; offset: number; limit: number; sort: RankSort },
 ) {
-  const { results } = await db
-    .prepare(
-      `SELECT *, COUNT(*) OVER () AS matches FROM (${RANKED_STREETS(mode, sort)})
-       WHERE ?4 = '' OR name LIKE ?4 ESCAPE '\\'
-       ORDER BY rank LIMIT ?5 OFFSET ?6`,
-    )
-    .bind(mode, city, uid(userId), q ? `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%` : '', limit, offset)
-    .all<StreetRow & { matches: number }>()
-  const matches = results[0]?.matches ?? 0
+  const ranked = await rankStreets(db, city, mode, userId, sort)
+  const needle = likeFold(q)
+  const matching = q ? ranked.filter((r) => likeFold(r.name).includes(needle)) : ranked
+  const page = matching.slice(offset, offset + limit)
   return {
-    rows: results.map((r) => ({
+    rows: page.map((r) => ({
       name: r.name,
       rank: r.rank,
-      path: r.is_street === 0,
+      path: r.path,
       totalMeters: r.total,
       completedMeters: r.done,
       percent: (r.done / r.total) * 100,
       activities: r.activities,
-      bbox: [r.x0, r.y0, r.x1, r.y1] as [number, number, number, number],
+      bbox: r.bbox,
     })),
     /** Streets ranked in this mode (independent of the search). */
-    ranked: results[0]?.ranked ?? (await countRanked(db, city, mode)),
-    matches,
-    nextOffset: offset + results.length < matches ? offset + results.length : null,
+    ranked: ranked.length,
+    matches: matching.length,
+    nextOffset: offset + page.length < matching.length ? offset + page.length : null,
   }
-}
-
-async function countRanked(db: D1Database, city: CityId, mode: Mode) {
-  const row = await db
-    .prepare(`SELECT COUNT(DISTINCT name) AS n FROM segments WHERE city = ? AND ${mode} = 1 AND name IS NOT NULL`)
-    .bind(city)
-    .first<{ n: number }>()
-  return row?.n ?? 0
 }
 
 /** Rank and activity count for one street (by name) or one unnamed segment. */
@@ -298,18 +246,17 @@ export async function getStreetDetail(
   target: { name: string } | { segmentId: number },
 ) {
   if ('name' in target) {
-    const row = await db
-      .prepare(`SELECT rank, ranked, activities FROM (${RANKED_STREETS(mode, 'progress')}) WHERE name = ?4`)
-      .bind(mode, city, uid(userId), target.name)
-      .first<{ rank: number; ranked: number; activities: number }>()
-    return { rank: row?.rank ?? null, ranked: row?.ranked ?? null, activities: row?.activities ?? 0 }
+    const ranked = await rankStreets(db, city, mode, userId, 'progress')
+    const row = ranked.find((r) => r.name === target.name)
+    return { rank: row?.rank ?? null, ranked: row ? ranked.length : null, activities: row?.activities ?? 0 }
   }
+  if (userId === null) return { rank: null, ranked: null, activities: 0 }
   const row = await db
     .prepare(
       `SELECT COUNT(DISTINCT a.activity_id) AS n FROM activity_segments a JOIN activities act ON act.id = a.activity_id
        WHERE a.segment_id = ? AND act.mode = ? AND act.user_id = ?`,
     )
-    .bind(target.segmentId, mode, uid(userId))
+    .bind(target.segmentId, mode, userId)
     .first<{ n: number }>()
   return { rank: null, ranked: null, activities: row?.n ?? 0 }
 }
@@ -323,7 +270,7 @@ const LEADERBOARD_SIZE = 50
  * done in this mode, then by activities. Returns the top of the board plus your own row.
  */
 export async function getLeaderboard(db: D1Database, city: CityId, mode: Mode, userId: string | null) {
-  const totals = await cityTotals(db, city, mode)
+  const totals = TOTALS[city][mode]
   const { results } = await db
     .prepare(
       `WITH done AS (
@@ -374,7 +321,6 @@ export async function getPersonalStandings(db: D1Database, mode: Mode, userId: s
     (Object.keys(CITIES) as CityId[]).map(async (city) => {
       const board = await getLeaderboard(db, city, mode, userId)
       const me = board.rows.find((r) => r.you) ?? board.you
-      const totals = await cityTotals(db, city, mode)
       return {
         city,
         name: CITIES[city].name,
@@ -382,7 +328,7 @@ export async function getPersonalStandings(db: D1Database, mode: Mode, userId: s
         players: board.players,
         percent: me?.percent ?? 0,
         meters: me?.meters ?? 0,
-        totalMeters: totals.meters,
+        totalMeters: TOTALS[city][mode].meters,
         activities: me?.activities ?? 0,
       }
     }),

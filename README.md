@@ -56,7 +56,8 @@ domain in production); the callback is `/api/strava/callback`.
   the map. The selection is in the URL (`?hood=Mission`).
 - **Rankings** — a tabbed card ranks the 41 neighborhoods and all ~2,100 named streets and paths,
   by progress then activities (or activities then progress via the sort toggle). Streets are
-  ranked in one SQL pass (~40 ms) and served 50 at a time; the list is virtualized
+  ranked on the server from the precomputed totals plus two queries over your own coverage and
+  activities, and served 50 at a time; the list is virtualized
   (TanStack Virtual) and loads pages as it scrolls (TanStack Query infinite query). Search runs on
   the server and keeps each street's overall rank. Picking a street frames and highlights it.
 - **Share** — a 1080×1440 (3:4) PNG drawn on a canvas: the map with your palette, headline stats,
@@ -65,6 +66,11 @@ domain in production); the callback is `/api/strava/callback`.
 - **Rebuilding the network** — `pnpm streets && pnpm db:setup`, then restart `pnpm dev`. The seed
   clears derived coverage and flags a re-match; the next sync re-credits every stored track
   against the new segments without any Strava requests.
+- **Static totals** — city, street and neighborhood totals (and every street's length and bounds)
+  are summed from the seed into `src/lib/totals.<city>.json`, so page views don't scan
+  `segments`. `pnpm streets` writes it; `pnpm totals [city]` regenerates it from the existing seed
+  without Overpass, and `pnpm test` fails if it's out of date. It ships with the Worker, so a new
+  seed applied to production D1 needs the matching deploy (and vice versa).
 - **Matching** — each segment gets sample points every 10 m (skipping 12 m at each end so that
   crossing an intersection doesn't count). A sample is visited when a track passes within 20 m.
   A segment is complete once 70% of its samples have been visited, across any number of
@@ -92,7 +98,8 @@ covered, as a bitmask of sample points) · `coverage` (OR of all activities, per
 
 ## Adding a city
 
-Add an entry to `src/lib/cities.ts`, run `pnpm streets <id>`, and load
+Add an entry to `src/lib/cities.ts`, run `pnpm streets <id>`, add the generated
+`src/lib/totals.<id>.json` to `TOTALS` in `src/server/queries.ts`, and load
 `db/seed/<id>-segments.sql`. Only San Francisco is enabled.
 
 ## Deploying your own

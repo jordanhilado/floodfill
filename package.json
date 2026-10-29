@@ -15,6 +15,7 @@
 		"cf-typegen": "wrangler types",
 		"generate-routes": "tsr generate",
 		"streets": "node scripts/build-streets.ts",
+		"totals": "node scripts/build-totals.ts",
 		"db:setup": "wrangler d1 migrations apply floodfill --local && wrangler d1 execute floodfill --local --file=db/seed/sf-segments.sql"
 	},
 	"dependencies": {

@@ -8,6 +8,7 @@
  *   db/seed/<city>-segments.sql          – D1 seed used by the coverage matcher
  *   public/data/<city>/neighborhoods.geojson + src/lib/neighborhoods.<city>.json
  *                                        – official neighborhood boundaries and their bounds
+ *   src/lib/totals.<city>.json           – static totals summed from the seed (scripts/totals.ts)
  *
  * Counted: public streets (no freeways or service roads) plus footways, paths,
  * cycleways, steps and tracks. Sidewalks and crossings are skipped because they
@@ -21,6 +22,7 @@ import { CITIES, type CityId } from '../src/lib/cities.ts'
 import { encodePolyline } from '../src/lib/polyline.ts'
 import { haversine } from '../src/lib/geo.ts'
 import { loadNeighborhoods, makeLocator, toGeoJSON } from './neighborhoods.ts'
+import { writeTotals } from './totals.ts'
 
 const MAX_SEGMENT_M = 150
 const MIN_SEGMENT_M = 20
@@ -316,6 +318,7 @@ async function main() {
   const sqlPath = path.join(root, 'db/seed', `${cityId}-segments.sql`)
   await mkdir(path.dirname(sqlPath), { recursive: true })
   await writeFile(sqlPath, lines.join('\n') + '\n')
+  const totalsPath = await writeTotals(cityId)
 
   const km = (sel: (s: Segment) => boolean) =>
     (segments.filter(sel).reduce((a, s) => a + s.length, 0) / 1000).toFixed(1)
@@ -327,7 +330,7 @@ async function main() {
     const outside = segments.filter((s) => s.foot && !s.neighborhood).reduce((a, s) => a + s.length, 0)
     console.log(`${hoods.length} neighborhoods · ${(outside / 1000).toFixed(1)} km on foot outside every neighborhood`)
   }
-  console.log(`Wrote ${path.relative(root, geoPath)} and ${path.relative(root, sqlPath)}`)
+  console.log(`Wrote ${path.relative(root, geoPath)}, ${path.relative(root, sqlPath)} and ${totalsPath}`)
 }
 
 await main()
