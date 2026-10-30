@@ -72,17 +72,47 @@ const RANKED_STREETS = (mode: 'foot' | 'bike', sort: RankSort) => `
 describe('street ranking', async () => {
   const db = await seededDatabase('sf')
   // Two users with overlapping activity; u1's progress leaves plenty of ties to break.
-  const insAct = db.prepare(`INSERT INTO activities (id, mode, start_date, start_ts, status, updated_at, user_id) VALUES (?, ?, '', 0, 'detailed', 0, ?)`)
+  const insAct = db.prepare(
+    `INSERT INTO activities (id, mode, city, start_date, start_ts, status, updated_at, user_id) VALUES (?, ?, 'sf', '', 0, 'detailed', 0, ?)`,
+  )
   const insSeg = db.prepare('INSERT OR IGNORE INTO activity_segments (activity_id, segment_id, mask) VALUES (?, ?, 1)')
   const insCov = db.prepare(`INSERT OR IGNORE INTO coverage (user_id, segment_id, mode, mask, completed) VALUES (?, ?, ?, 1, ?)`)
   for (let a = 1; a <= 60; a++) insAct.run(a, a % 4 === 0 ? 'bike' : 'foot', a <= 50 ? 'u1' : 'u2')
-  for (let id = 1; id <= 9000; id++) {
+  const segs = db.prepare('SELECT id, foot, bike FROM segments WHERE id <= 9000').all() as { id: number; foot: number; bike: number }[]
+  for (const { id, foot, bike } of segs) {
     const a = 1 + (id % 60)
     const mode = a % 4 === 0 ? 'bike' : 'foot'
-    insSeg.run(a, id)
+    // Like the matcher, an activity only covers segments open to its own mode.
+    if ((mode === 'foot' ? foot : bike) === 1) insSeg.run(a, id)
     insCov.run(a <= 50 ? 'u1' : 'u2', id, mode, id % 7 === 0 ? 0 : 1)
   }
+  // The streets and neighborhoods each activity touched, as migrations/0007 backfills them.
+  db.exec(`
+    INSERT INTO activity_groups (activity_id, kind, key)
+    SELECT DISTINCT a.activity_id, 'neighborhood', s.neighborhood FROM activity_segments a JOIN segments s ON s.id = a.segment_id
+    WHERE s.neighborhood IS NOT NULL;
+    INSERT INTO activity_groups (activity_id, kind, key)
+    SELECT DISTINCT a.activity_id, 'name', s.name FROM activity_segments a JOIN segments s ON s.id = a.segment_id
+    WHERE s.name IS NOT NULL;`)
   const D1 = d1(db)
+
+  it('counts activities per neighborhood like the SQL over every matched segment', async () => {
+    for (const mode of ['foot', 'bike'] as const) {
+      const old = db
+        .prepare(
+          `SELECT s.neighborhood AS k, COUNT(DISTINCT a.activity_id) AS n
+           FROM activities act JOIN activity_segments a ON a.activity_id = act.id JOIN segments s ON s.id = a.segment_id
+           WHERE act.user_id = 'u1' AND act.mode = ? AND s.city = 'sf' AND s.${mode} = 1 AND s.neighborhood IS NOT NULL
+           GROUP BY s.neighborhood`,
+        )
+        .all(mode) as { k: string; n: number }[]
+      expect(old.length).toBeGreaterThan(0)
+      const hoods = await getNeighborhoodData(D1, 'sf', mode, 'u1')
+      expect(Object.fromEntries(hoods.filter((h) => h.activities > 0).map((h) => [h.name, h.activities]))).toEqual(
+        Object.fromEntries(old.map((r) => [r.k, r.n])),
+      )
+    }
+  })
 
   for (const mode of ['foot', 'bike'] as const)
     for (const sort of ['progress', 'activities'] as const)

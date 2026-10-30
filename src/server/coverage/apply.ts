@@ -24,12 +24,28 @@ export async function applyActivityCoverage(
 
   const writes: D1PreparedStatement[] = [
     db.prepare('DELETE FROM activity_segments WHERE activity_id = ?').bind(activityId),
+    db.prepare('DELETE FROM activity_groups WHERE activity_id = ?').bind(activityId),
   ]
   for (const rows of chunk([...masks], Math.floor(MAX_PARAMS / 3))) {
     writes.push(
       db
         .prepare(`INSERT INTO activity_segments (activity_id, segment_id, mask) VALUES ${rows.map(() => '(?,?,?)').join(',')}`)
         .bind(...rows.flatMap(([segmentId, mask]) => [activityId, segmentId, mask])),
+    )
+  }
+  // The streets and neighborhoods it touched, so activity counts per street or neighborhood
+  // don't have to read every matched segment (see activityCounts in queries.ts).
+  const groups = new Map<string, [kind: string, key: string]>()
+  for (const segmentId of masks.keys()) {
+    const seg = index.byId.get(segmentId)
+    if (seg?.name) groups.set(`name:${seg.name}`, ['name', seg.name])
+    if (seg?.neighborhood) groups.set(`neighborhood:${seg.neighborhood}`, ['neighborhood', seg.neighborhood])
+  }
+  for (const rows of chunk([...groups.values()], Math.floor(MAX_PARAMS / 3))) {
+    writes.push(
+      db
+        .prepare(`INSERT INTO activity_groups (activity_id, kind, key) VALUES ${rows.map(() => '(?,?,?)').join(',')}`)
+        .bind(...rows.flatMap(([kind, key]) => [activityId, kind, key])),
     )
   }
   await db.batch(writes)

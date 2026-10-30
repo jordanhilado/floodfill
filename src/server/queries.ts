@@ -157,18 +157,22 @@ async function completedMeters(db: D1Database, city: CityId, mode: Mode, userId:
   return new Map(results.map((r) => [r.k, r.m]))
 }
 
-/** Distinct activities (of this mode) that touched each group: a neighborhood, or a street name. */
+/**
+ * Distinct activities (of this mode) that touched each group: a neighborhood, or a street name.
+ * Reads activity_groups, one row per activity and group, rather than every matched segment. An
+ * activity only matches segments of its own mode in its own city, so those filters come from the
+ * activity.
+ */
 async function activityCounts(db: D1Database, city: CityId, mode: Mode, userId: string, by: 'neighborhood' | 'name') {
   const { results } = await db
     .prepare(
-      `SELECT s.${by} AS k, COUNT(DISTINCT a.activity_id) AS n
+      `SELECT g.key AS k, COUNT(*) AS n
        FROM activities act
-       CROSS JOIN activity_segments a ON a.activity_id = act.id
-       CROSS JOIN segments s ON s.id = a.segment_id
-       WHERE act.user_id = ? AND act.mode = ? AND s.city = ? AND s.${mode} = 1 AND s.${by} IS NOT NULL
-       GROUP BY s.${by}`,
+       CROSS JOIN activity_groups g ON g.activity_id = act.id AND g.kind = ?
+       WHERE act.user_id = ? AND act.mode = ? AND act.city = ?
+       GROUP BY g.key`,
     )
-    .bind(userId, mode, city)
+    .bind(by, userId, mode, city)
     .all<{ k: string; n: number }>()
   return new Map(results.map((r) => [r.k, r.n]))
 }

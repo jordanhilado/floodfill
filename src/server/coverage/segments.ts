@@ -8,6 +8,8 @@ type SegmentRow = {
   id: number
   foot: number
   bike: number
+  name: string | null
+  neighborhood: string | null
   min_lat: number
   min_lng: number
   max_lat: number
@@ -38,7 +40,7 @@ export function loadCityIndex(db: D1Database, city: CityId): Promise<CityIndex> 
 async function build(db: D1Database, city: CityId): Promise<CityIndex> {
   const project = makeProjector(CITIES[city].center[1])
   const { results } = await db
-    .prepare('SELECT id, foot, bike, min_lat, min_lng, max_lat, max_lng, coords FROM segments WHERE city = ?')
+    .prepare('SELECT id, foot, bike, name, neighborhood, min_lat, min_lng, max_lat, max_lng, coords FROM segments WHERE city = ?')
     .bind(city)
     .all<SegmentRow>()
   const segments = results.map((r): IndexedSegment => {
@@ -48,6 +50,8 @@ async function build(db: D1Database, city: CityId): Promise<CityIndex> {
       length,
       foot: r.foot === 1,
       bike: r.bike === 1,
+      name: r.name,
+      neighborhood: r.neighborhood,
       bbox: { minLat: r.min_lat, minLng: r.min_lng, maxLat: r.max_lat, maxLng: r.max_lng },
       samples,
       sampleCount,

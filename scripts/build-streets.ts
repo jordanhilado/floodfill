@@ -300,6 +300,7 @@ async function main() {
     // Segment ids change on every build, so drop derived coverage and ask the next
     // sync to re-match stored tracks (no Strava requests needed).
     `DELETE FROM coverage WHERE segment_id IN (SELECT id FROM segments WHERE city = ${sqlStr(cityId)});`,
+    `DELETE FROM activity_groups WHERE activity_id IN (SELECT activity_id FROM activity_segments WHERE segment_id IN (SELECT id FROM segments WHERE city = ${sqlStr(cityId)}));`,
     `DELETE FROM activity_segments WHERE segment_id IN (SELECT id FROM segments WHERE city = ${sqlStr(cityId)});`,
     `DELETE FROM segments WHERE city = ${sqlStr(cityId)};`,
     `INSERT INTO state (key, value, updated_at) VALUES ('rematch', '{"ts":0,"id":0}', ${Date.now()}) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;`,

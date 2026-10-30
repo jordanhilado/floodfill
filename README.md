@@ -93,8 +93,10 @@ domain in production); the callback is `/api/strava/callback`.
 ## Data model (D1)
 
 `segments` (static street network) · `activities` · `activity_segments` (what each activity
-covered, as a bitmask of sample points) · `coverage` (OR of all activities, per segment and mode) ·
-`state` (tokens, cursors, rate usage, lock) · `sync_runs`.
+covered, as a bitmask of sample points) · `activity_groups` (the street names and neighborhoods
+each activity touched, so per-street and per-neighborhood activity counts don't read every matched
+segment) · `coverage` (OR of all activities, per segment and mode) · `state` (tokens, cursors, rate
+usage, lock) · `sync_runs`.
 
 ## Adding a city
 

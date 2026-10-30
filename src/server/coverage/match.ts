@@ -20,6 +20,9 @@ export type IndexedSegment = {
   length: number
   foot: boolean
   bike: boolean
+  /** Street name and neighborhood, for the per-activity groups (see apply.ts). */
+  name?: string | null
+  neighborhood?: string | null
   bbox: BBox
   /** Projected sample points [x, y] in meters. */
   samples: Float64Array
