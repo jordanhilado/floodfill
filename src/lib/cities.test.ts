@@ -14,8 +14,8 @@ describe('cityForTrack', () => {
   })
 
   it('ignores tracks outside every city', () => {
-    // Central Park, Manhattan, while New York isn't enabled.
-    if (!Object.hasOwn(CITIES, 'nyc')) expect(cityForTrack([[40.7812, -73.9665], [40.7712, -73.9742]])).toBeNull()
+    // Chicago's lakefront.
+    expect(cityForTrack([[41.8917, -87.6086], [41.8676, -87.6136]])).toBeNull()
     expect(cityForTrack([])).toBeNull()
   })
 
