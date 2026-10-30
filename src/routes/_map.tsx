@@ -40,6 +40,7 @@ const STRAVA_NOTICES: Record<string, string> = {
   denied: "Strava access wasn't granted. You can connect any time from Settings.",
   scope: 'Floodfill needs permission to view your activities. Connect again and keep that box checked.',
   taken: 'That Strava account is already connected to another Floodfill account.',
+  full: "Floodfill has reached Strava's limit on connected athletes. We've applied to raise it and will email you when you can connect. Meanwhile, import your Strava export from Settings.",
   signin: 'Sign in again, then connect Strava.',
   error: "Couldn't connect Strava. Try again from Settings.",
 }
@@ -242,7 +243,14 @@ function Home() {
           <>
             {notice && <div className="hidden sm:block">{noticeBanner}</div>}
             {me ? (
-              <ProgressCard city={city} mode={mode} unit={prefs.unit} stravaConnected={me.stravaConnected} />
+              <ProgressCard
+                city={city}
+                mode={mode}
+                unit={prefs.unit}
+                stravaConnected={me.stravaConnected}
+                hasActivities={me.hasActivities}
+                stravaFull={syncStatus.stravaFull}
+              />
             ) : (
               <GetStartedCard city={city} scheme={prefs.scheme} onGetStarted={getStarted} />
             )}

@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 import { seededDatabase } from '../../scripts/totals'
 import { decodePolyline, encodePolyline } from '../lib/polyline'
-import { rematchPending, runRematch, runSync } from './sync'
+import { importActivities, rematchPending, runRematch, runSync } from './sync'
 
 /** D1's statement API over an in-memory SQLite database. */
 function d1(db: DatabaseSync) {
@@ -116,5 +116,44 @@ describe('rematch from a page visit', async () => {
 
   it('does nothing once there is nothing to match', async () => {
     expect(await runRematch(env, 60_000)).toEqual({ stopReason: 'complete', rematched: 0 })
+  })
+})
+
+describe('importing a Strava export', async () => {
+  const db = await seededDatabase('sf')
+  const rows = db.prepare(`SELECT coords FROM segments WHERE city = 'sf' AND name = 'Market Street' AND foot = 1 ORDER BY id LIMIT 8`).all() as {
+    coords: string
+  }[]
+  const market = encodePolyline(rows.flatMap((r) => decodePolyline(r.coords, 6)))
+  const lakefront = encodePolyline([
+    [41.8917, -87.6086],
+    [41.8676, -87.6136],
+  ])
+  const base = { name: 'Walk', startDate: '2024-05-01T15:00:00.000Z', distanceM: 1000, movingTimeS: 600 }
+  db.prepare(
+    `INSERT INTO activities (id, user_id, mode, city, start_date, start_ts, status, updated_at) VALUES (9, 'someone', 'foot', 'sf', '', 0, 'detailed', 0)`,
+  ).run()
+  const added = await importActivities(d1(db), 'u1', [
+    { ...base, id: 1, sportType: 'Walk', polyline: market },
+    { ...base, id: 2, sportType: 'Run', polyline: lakefront },
+    { ...base, id: 9, sportType: 'Walk', polyline: market },
+  ])
+  const activity = (id: number) => db.prepare('SELECT user_id, city, status, polyline IS NOT NULL AS has_track FROM activities WHERE id = ?').get(id)
+
+  it('stores new activities and skips ones already stored', () => {
+    expect(added).toBe(2)
+    expect(activity(9)).toEqual({ user_id: 'someone', city: 'sf', status: 'detailed', has_track: 0 })
+  })
+
+  it('credits activities in a city from their full track', () => {
+    expect(activity(1)).toEqual({ user_id: 'u1', city: 'sf', status: 'detailed', has_track: 1 })
+    const covered = db.prepare(`SELECT COUNT(*) AS n FROM coverage WHERE user_id = 'u1' AND mode = 'foot' AND completed = 1`).get() as {
+      n: number
+    }
+    expect(covered.n).toBeGreaterThan(0)
+  })
+
+  it('keeps the track of an activity outside every city, for a city that opens later', () => {
+    expect(activity(2)).toEqual({ user_id: 'u1', city: null, status: 'ignored', has_track: 1 })
   })
 })
