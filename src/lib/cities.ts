@@ -1,6 +1,6 @@
 import { OSM_STREETS, type Credit } from './credits.ts'
 
-export type CityId = 'sf' | 'la' | 'seattle'
+export type CityId = 'sf' | 'la' | 'nyc' | 'seattle'
 
 export type City = {
   id: CityId
@@ -79,6 +79,32 @@ export const CITIES: Record<CityId, City> = {
         source: 'Los Angeles Times, Mapping L.A., via City of Los Angeles GeoHub',
         url: 'https://geohub.lacity.org/datasets/d6c55385a0e749519f238b77135eafac',
         license: { name: 'CC BY 4.0', url: 'https://creativecommons.org/licenses/by/4.0/' },
+      },
+    ],
+  },
+  nyc: {
+    id: 'nyc',
+    name: 'New York',
+    state: 'NY',
+    osmRelationId: 175905,
+    center: [-73.9442, 40.6971],
+    zoom: 10.3,
+    bounds: [
+      [-74.2588, 40.4766],
+      [-73.7002, 40.9176],
+    ],
+    idBase: 20_000_000,
+    neighborhoods: {
+      source: 'NYC Department of City Planning 2020 Neighborhood Tabulation Areas',
+      url: 'https://data.cityofnewyork.us/resource/9nt8-h7nd.geojson?$select=ntaname,the_geom&$limit=5000',
+      nameKey: 'ntaname',
+    },
+    credits: [
+      OSM_STREETS,
+      {
+        what: 'Neighborhood boundaries',
+        source: 'NYC Department of City Planning, 2020 Neighborhood Tabulation Areas, via NYC Open Data',
+        url: 'https://data.cityofnewyork.us/City-Government/2020-Neighborhood-Tabulation-Areas-NTAs-/9nt8-h7nd',
       },
     ],
   },

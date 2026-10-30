@@ -3,7 +3,8 @@
 See how much of your city you've covered. [floodfill.world](https://floodfill.world) matches your
 Strava activities against every street and path in a city and fills in the map as you go.
 
-Floodfill works city by city. Open now: **San Francisco**, **Los Angeles** and **Seattle**.
+Floodfill works city by city. Open now: **San Francisco**, **Los Angeles**, **New York** and
+**Seattle**.
 
 ## Features
 
@@ -58,5 +59,6 @@ Code is [MIT](LICENSE). Street and path data is © OpenStreetMap contributors, a
 - San Francisco: DataSF, under the [PDDL](https://opendatacommons.org/licenses/pddl/1-0/)
 - Los Angeles: Los Angeles Times Mapping L.A., via the City of Los Angeles GeoHub, under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+- New York: NYC Department of City Planning, 2020 Neighborhood Tabulation Areas, via NYC Open Data
 - Seattle: City of Seattle Neighborhood Map Atlas, under the
   [PDDL](https://opendatacommons.org/licenses/pddl/1-0/)
