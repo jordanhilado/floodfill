@@ -1,6 +1,6 @@
 import { OSM_STREETS, type Credit } from './credits.ts'
 
-export type CityId = 'sf' | 'seattle'
+export type CityId = 'sf' | 'la' | 'seattle'
 
 export type City = {
   id: CityId
@@ -52,6 +52,33 @@ export const CITIES: Record<CityId, City> = {
         source: 'DataSF, Analysis Neighborhoods',
         url: 'https://data.sf.gov/d/p5b7-5n3h',
         license: { name: 'PDDL', url: 'https://opendatacommons.org/licenses/pddl/1-0/' },
+      },
+    ],
+  },
+  la: {
+    id: 'la',
+    name: 'Los Angeles',
+    state: 'CA',
+    osmRelationId: 207359,
+    center: [-118.4117, 34.0207],
+    zoom: 10,
+    bounds: [
+      [-118.6682, 33.7037],
+      [-118.1553, 34.3373],
+    ],
+    idBase: 10_000_000,
+    neighborhoods: {
+      source: 'Los Angeles Times Mapping L.A.',
+      url: 'https://services5.arcgis.com/7nsPwEMP38bSkCjy/arcgis/rest/services/LA_Times_Neighborhoods/FeatureServer/0/query?where=1%3D1&outFields=name&outSR=4326&f=geojson',
+      nameKey: 'name',
+    },
+    credits: [
+      OSM_STREETS,
+      {
+        what: 'Neighborhood boundaries',
+        source: 'Los Angeles Times, Mapping L.A., via City of Los Angeles GeoHub',
+        url: 'https://geohub.lacity.org/datasets/d6c55385a0e749519f238b77135eafac',
+        license: { name: 'CC BY 4.0', url: 'https://creativecommons.org/licenses/by/4.0/' },
       },
     ],
   },
