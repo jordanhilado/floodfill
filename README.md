@@ -3,7 +3,7 @@
 See how much of your city you've covered. [floodfill.world](https://floodfill.world) matches your
 Strava activities against every street and path in a city and fills in the map as you go.
 
-Floodfill works city by city. **San Francisco** is the only city open right now.
+Floodfill works city by city. Open now: **San Francisco** and **Seattle**.
 
 ## Features
 
@@ -24,8 +24,8 @@ Floodfill works city by city. **San Francisco** is the only city open right now.
 - [Cloudflare Workers](https://developers.cloudflare.com/workers/) with D1 for storage, cron
   triggers for syncing, and Email Service for sign-in codes
 - [MapLibre GL](https://maplibre.org/) for the map
-- Street data from [OpenStreetMap](https://www.openstreetmap.org/); San Francisco neighborhoods
-  from [DataSF](https://data.sf.gov/)
+- Street data from [OpenStreetMap](https://www.openstreetmap.org/); neighborhoods from each
+  city's open data (see License)
 - TypeScript, Vite, Vitest and pnpm
 
 ## Running locally
@@ -53,5 +53,8 @@ To suggest a new city or report a problem, [open an issue](https://github.com/jo
 ## License
 
 Code is [MIT](LICENSE). Street and path data is © OpenStreetMap contributors, available under the
-[ODbL](https://opendatacommons.org/licenses/odbl/). San Francisco neighborhood boundaries are from
-DataSF, under the [PDDL](https://opendatacommons.org/licenses/pddl/1-0/).
+[ODbL](https://opendatacommons.org/licenses/odbl/). Neighborhood boundaries:
+
+- San Francisco: DataSF, under the [PDDL](https://opendatacommons.org/licenses/pddl/1-0/)
+- Seattle: City of Seattle Neighborhood Map Atlas, under the
+  [PDDL](https://opendatacommons.org/licenses/pddl/1-0/)
