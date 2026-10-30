@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping with Floodfill. See the [README](README.md) to set up and run the app locally.
+Thanks for helping with floodfill.world. See the [README](README.md) to set up and run the app locally.
 
 ## Branches
 
@@ -49,5 +49,16 @@ Pull requests are squash-merged, so the title becomes the commit message on `mai
 ## Before opening a pull request
 
 Run `pnpm typecheck` and `pnpm test`. If you rebuilt the street network, commit everything
-`pnpm streets` regenerated together (see "Rebuilding the network" in the README). Fill in the
-pull request template: what changed, how you tested it, and anything a reviewer should know.
+`pnpm streets` regenerated together (see below). Fill in the pull request template: what changed,
+how you tested it, and anything a reviewer should know.
+
+## Rebuilding the street network
+
+Run `pnpm streets && pnpm db:setup`, then restart `pnpm dev`. Stored activities are matched again
+against the new streets on the next sync, without new Strava requests.
+
+## Adding a city
+
+Add an entry to `src/lib/cities.ts`, run `pnpm streets <id>`, add the generated
+`src/lib/totals.<id>.json` to `TOTALS` in `src/server/queries.ts`, and load
+`db/seed/<id>-segments.sql`.
