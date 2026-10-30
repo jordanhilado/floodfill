@@ -230,10 +230,8 @@ async function rematch(db: D1Database, outOfTime: () => boolean) {
   for (const { key } of keys) {
     if (outOfTime()) break
     const city = key.slice('rematch:'.length)
-    if (!Object.hasOwn(CITIES, city)) {
-      await db.prepare('DELETE FROM state WHERE key = ?').bind(key).run()
-      continue
-    }
+    // A city's seed goes into production before the code that enables it, so leave its flag for then.
+    if (!Object.hasOwn(CITIES, city)) continue
     done += await rematchCity(db, city as CityId, key, outOfTime)
   }
   return done
