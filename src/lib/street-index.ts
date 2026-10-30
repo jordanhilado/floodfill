@@ -16,17 +16,19 @@ export type StreetCollection = { type: 'FeatureCollection'; features: StreetFeat
 
 const loaded = new Map<CityId, Promise<StreetCollection>>()
 
-/**
- * A city's streets, as drawn on the map. Big cities are split into several static files (see
- * scripts/build-streets.ts); this fetches them all once and joins them.
- */
+/** The static files holding a city's streets: big cities are split (see scripts/build-streets.ts). */
+export function streetFileUrls(city: CityId) {
+  const count = (streetFiles as Record<string, { parts: number }>)[city]?.parts ?? 1
+  return Array.from({ length: count }, (_, i) => `/data/${city}/streets-${i}.geojson`)
+}
+
+/** A city's streets, as drawn on the map: every file, fetched once and joined. */
 export function loadStreets(city: CityId): Promise<StreetCollection> {
   let p = loaded.get(city)
   if (!p) {
-    const count = (streetFiles as Record<string, { parts: number }>)[city]?.parts ?? 1
     p = Promise.all(
-      Array.from({ length: count }, async (_, i) => {
-        const res = await fetch(`/data/${city}/streets-${i}.geojson`)
+      streetFileUrls(city).map(async (url) => {
+        const res = await fetch(url)
         if (!res.ok) throw new Error(`Couldn't load streets (${res.status})`)
         return ((await res.json()) as StreetCollection).features
       }),

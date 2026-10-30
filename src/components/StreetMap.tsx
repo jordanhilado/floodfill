@@ -256,7 +256,6 @@ export default function StreetMap({
 
   useEffect(() => {
     const c = CITIES[city]
-    framed.current = undefined
     const map = new maplibregl.Map({
       container: container.current!,
       style: MAP_THEME[themeRef.current].style,
