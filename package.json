@@ -2,6 +2,7 @@
 	"name": "floodfill",
 	"private": true,
 	"type": "module",
+	"packageManager": "pnpm@10.34.9",
 	"imports": {
 		"#/*": "./src/*"
 	},
