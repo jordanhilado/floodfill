@@ -1,10 +1,10 @@
-import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { Bike, Footprints, Info, MapPin, Settings2 } from 'lucide-react'
 import { useState } from 'react'
 import { DOMAIN } from '../lib/brand'
 import { CITIES, type CityId } from '../lib/cities'
 import { formatDistance, formatPercent, type Prefs, type Unit } from '../lib/prefs'
-import { coverageQuery, syncStatusQuery, type Mode } from '../lib/query-options'
+import { coverageQuery, type Mode } from '../lib/query-options'
 import type { ResolvedTheme } from '../lib/theme'
 import { CityDialog } from './CityDialog'
 import { InfoDialog } from './InfoDialog'
@@ -113,10 +113,19 @@ export function GetStartedCard({ city, onGetStarted }: { city: CityId; onGetStar
   )
 }
 
-export function ProgressCard({ mode, unit, stravaConnected }: { mode: Mode; unit: Unit; stravaConnected: boolean }) {
-  const { data } = useSuspenseQuery(coverageQuery(mode))
-  const { data: status } = useQuery(syncStatusQuery())
-  const activities = status?.activities[mode]
+export function ProgressCard({
+  city,
+  mode,
+  unit,
+  stravaConnected,
+}: {
+  city: CityId
+  mode: Mode
+  unit: Unit
+  stravaConnected: boolean
+}) {
+  const { data } = useSuspenseQuery(coverageQuery(city, mode))
+  const activities = data.activities
   const ModeIcon = mode === 'foot' ? Footprints : Bike
 
   return (

@@ -4,7 +4,10 @@
  *   node scripts/build-streets.ts [cityId] [--refresh]
  *
  * Outputs:
- *   public/data/<city>/streets.geojson   – map geometry (static asset, cached by the CDN)
+ *   public/data/<city>/streets-<n>.geojson
+ *                                        – map geometry in parts of at most MAX_PART_BYTES (static
+ *                                          assets, cached by the CDN)
+ *   src/lib/street-files.json            – each city's number of parts and segments
  *   db/seed/<city>-segments.sql          – D1 seed used by the coverage matcher
  *   public/data/<city>/neighborhoods.geojson + src/lib/neighborhoods.<city>.json
  *                                        – official neighborhood boundaries and their bounds
@@ -15,10 +18,10 @@
  * duplicate the street they run along. Ways are split at intersections and capped
  * at MAX_SEGMENT_M so that each segment roughly corresponds to one block face.
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { CITIES, type CityId } from '../src/lib/cities.ts'
+import { CITIES, ID_SPAN, type CityId } from '../src/lib/cities.ts'
 import { encodePolyline } from '../src/lib/polyline.ts'
 import { haversine } from '../src/lib/geo.ts'
 import { loadNeighborhoods, makeLocator, toGeoJSON } from './neighborhoods.ts'
@@ -27,6 +30,8 @@ import { writeTotals } from './totals.ts'
 const MAX_SEGMENT_M = 150
 const MIN_SEGMENT_M = 20
 const MERGE_BELOW_M = 25
+// Cloudflare serves static files up to 25 MiB; big cities' streets are split well below that.
+const MAX_PART_BYTES = 10 * 1024 * 1024
 
 const MIRRORS = [
   'https://overpass-api.de/api/interpreter',
@@ -171,7 +176,7 @@ function lineLength(coords: [number, number][]) {
 
 const round = (v: number) => Math.round(v * 1e6) / 1e6
 
-function buildSegments(data: Overpass): Segment[] {
+function buildSegments(data: Overpass, idBase: number): Segment[] {
   const ways = data.elements.filter((e): e is OsmWay => e.type === 'way' && classify(e.tags) !== null)
   const inside = new Set(data.elements.filter((e) => e.type === 'node').map((e) => e.id))
 
@@ -180,7 +185,7 @@ function buildSegments(data: Overpass): Segment[] {
   for (const w of ways) for (const n of w.nodes) refs.set(n, (refs.get(n) ?? 0) + 1)
 
   const segments: Segment[] = []
-  let nextId = 1
+  let nextId = idBase + 1
   for (const w of ways) {
     const { kind, foot, bike } = classify(w.tags)!
 
@@ -252,7 +257,8 @@ async function main() {
   if (!CITIES[cityId]) throw new Error(`Unknown city ${cityId}`)
   const refresh = args.includes('--refresh')
   const data = await fetchOverpass(cityId, refresh)
-  const segments = buildSegments(data)
+  const segments = buildSegments(data, CITIES[cityId].idBase)
+  if (segments.length > ID_SPAN) throw new Error(`${segments.length} segments don't fit in one city's id range`)
 
   const hoods = await loadNeighborhoods(CITIES[cityId], path.join(root, '.cache/osm'), refresh)
   const locate = makeLocator(hoods)
@@ -272,9 +278,8 @@ async function main() {
 
   // h: index into src/lib/neighborhoods.<city>.json, so the client can name a segment's neighborhood.
   const hoodIndex = new Map(hoods.map((h, i) => [h.name, i]))
-  const geojson = {
-    type: 'FeatureCollection',
-    features: segments.map((s) => ({
+  const features = segments.map((s) =>
+    JSON.stringify({
       type: 'Feature',
       id: s.id,
       // k: 1 for paths, so the map can draw them thinner than streets
@@ -289,21 +294,39 @@ async function main() {
         type: 'LineString',
         coordinates: s.coords.map(([la, ln]) => [Math.round(ln * 1e5) / 1e5, Math.round(la * 1e5) / 1e5]),
       },
-    })),
+    }),
+  )
+  const parts: string[][] = [[]]
+  let partBytes = 0
+  for (const f of features) {
+    if (partBytes + f.length > MAX_PART_BYTES && parts.at(-1)!.length > 0) {
+      parts.push([])
+      partBytes = 0
+    }
+    parts.at(-1)!.push(f)
+    partBytes += f.length + 1
   }
-  const geoPath = path.join(root, 'public/data', cityId, 'streets.geojson')
-  await mkdir(path.dirname(geoPath), { recursive: true })
-  await writeFile(geoPath, JSON.stringify(geojson))
+  const dataDir = path.join(root, 'public/data', cityId)
+  await mkdir(dataDir, { recursive: true })
+  for (const f of await readdir(dataDir)) if (/^streets(-\d+)?\.geojson$/.test(f)) await rm(path.join(dataDir, f))
+  for (const [i, part] of parts.entries()) {
+    await writeFile(path.join(dataDir, `streets-${i}.geojson`), `{"type":"FeatureCollection","features":[${part.join(',')}]}`)
+  }
+  const filesPath = path.join(root, 'src/lib/street-files.json')
+  const files = JSON.parse(await readFile(filesPath, 'utf8')) as Record<string, { parts: number; segments: number }>
+  files[cityId] = { parts: parts.length, segments: segments.length }
+  const sorted = Object.entries(files).sort(([a], [b]) => a.localeCompare(b))
+  await writeFile(filesPath, `{\n${sorted.map(([id, f]) => `  ${JSON.stringify(id)}: ${JSON.stringify(f)}`).join(',\n')}\n}\n`)
 
   const lines = [
     `-- Generated by scripts/build-streets.ts from OpenStreetMap (© OpenStreetMap contributors, ODbL)`,
     // Segment ids change on every build, so drop derived coverage and ask the next
-    // sync to re-match stored tracks (no Strava requests needed).
+    // sync to re-match this city's stored tracks (no Strava requests needed).
     `DELETE FROM coverage WHERE segment_id IN (SELECT id FROM segments WHERE city = ${sqlStr(cityId)});`,
     `DELETE FROM activity_groups WHERE activity_id IN (SELECT activity_id FROM activity_segments WHERE segment_id IN (SELECT id FROM segments WHERE city = ${sqlStr(cityId)}));`,
     `DELETE FROM activity_segments WHERE segment_id IN (SELECT id FROM segments WHERE city = ${sqlStr(cityId)});`,
     `DELETE FROM segments WHERE city = ${sqlStr(cityId)};`,
-    `INSERT INTO state (key, value, updated_at) VALUES ('rematch', '{"ts":0,"id":0}', ${Date.now()}) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;`,
+    `INSERT INTO state (key, value, updated_at) VALUES ('rematch:${cityId}', '{"ts":0,"id":0}', ${Date.now()}) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;`,
   ]
   const BATCH = 200
   for (let i = 0; i < segments.length; i += BATCH) {
@@ -331,7 +354,9 @@ async function main() {
     const outside = segments.filter((s) => s.foot && !s.neighborhood).reduce((a, s) => a + s.length, 0)
     console.log(`${hoods.length} neighborhoods · ${(outside / 1000).toFixed(1)} km on foot outside every neighborhood`)
   }
-  console.log(`Wrote ${path.relative(root, geoPath)}, ${path.relative(root, sqlPath)} and ${totalsPath}`)
+  console.log(
+    `Wrote ${parts.length} part(s) in ${path.relative(root, dataDir)}, ${path.relative(root, sqlPath)} and ${totalsPath}`,
+  )
 }
 
 await main()

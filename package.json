@@ -17,7 +17,8 @@
 		"generate-routes": "tsr generate",
 		"streets": "node scripts/build-streets.ts",
 		"totals": "node scripts/build-totals.ts",
-		"db:setup": "wrangler d1 migrations apply floodfill --local && wrangler d1 execute floodfill --local --file=db/seed/sf-segments.sql"
+		"db:setup": "wrangler d1 migrations apply floodfill --local && node scripts/seed.ts",
+		"seed": "node scripts/seed.ts"
 	},
 	"dependencies": {
 		"@tailwindcss/vite": "^4.1.18",

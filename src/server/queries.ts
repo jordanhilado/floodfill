@@ -1,8 +1,6 @@
 import type { ModeTotals } from '../../scripts/totals'
-import { CITIES, type CityId } from '../lib/cities'
-import sfTotals from '../lib/totals.sf.json'
+import { CITIES, CITY_IDS, type CityId } from '../lib/cities'
 import type { Mode } from './coverage/apply'
-import { getState } from './db'
 import { stravaConfigured } from './strava/client'
 import { RateLimiter } from './strava/rate-limit'
 
@@ -10,9 +8,15 @@ import { RateLimiter } from './strava/rate-limit'
 // progress without touching D1.
 
 // Static totals of the street network, summed from the D1 seed at build time (scripts/totals.ts),
-// so page views don't scan `segments`. Regenerated whenever the seed is. JSON can't type the
-// `names` tuples, hence the cast; src/lib/totals.test.ts checks the file against the seed.
-const TOTALS = { sf: sfTotals } as unknown as Record<CityId, Record<Mode, ModeTotals>>
+// so page views don't scan `segments`. Regenerated whenever the seed is. Each city's file loads
+// the first time it's needed, so big cities don't slow every Worker start. JSON can't type the
+// `names` tuples, hence the cast; src/lib/totals.test.ts checks each file against its seed.
+const TOTALS_FILES = import.meta.glob('../lib/totals.*.json', { import: 'default' })
+
+async function totalsFor(city: CityId, mode: Mode): Promise<ModeTotals> {
+  const totals = (await TOTALS_FILES[`../lib/totals.${city}.json`]()) as Record<Mode, ModeTotals>
+  return totals[mode]
+}
 
 export type CoverageData = Awaited<ReturnType<typeof getCoverageData>>
 
@@ -21,19 +25,25 @@ export type CoverageData = Awaited<ReturnType<typeof getCoverageData>>
 const NAMED_STREET = `kind = 'street' AND name IS NOT NULL`
 
 export async function getCoverageData(db: D1Database, city: CityId, mode: Mode, userId: string | null) {
-  const totals = TOTALS[city][mode]
-  const results =
+  const [totals, results, counted] = await Promise.all([
+    totalsFor(city, mode),
     userId === null
       ? []
-      : (
-          await db
-            .prepare(
-              `SELECT s.id, CASE WHEN s.${NAMED_STREET} THEN s.name END AS street, s.length_m FROM coverage c JOIN segments s ON s.id = c.segment_id
-               WHERE c.user_id = ? AND c.mode = ? AND c.completed = 1 AND s.city = ? AND s.${mode} = 1`,
-            )
-            .bind(userId, mode, city)
-            .all<{ id: number; street: string | null; length_m: number }>()
-        ).results
+      : db
+          .prepare(
+            `SELECT s.id, CASE WHEN s.${NAMED_STREET} THEN s.name END AS street, s.length_m FROM coverage c JOIN segments s ON s.id = c.segment_id
+             WHERE c.user_id = ? AND c.mode = ? AND c.completed = 1 AND s.city = ? AND s.${mode} = 1`,
+          )
+          .bind(userId, mode, city)
+          .all<{ id: number; street: string | null; length_m: number }>()
+          .then((r) => r.results),
+    userId === null
+      ? null
+      : db
+          .prepare(`SELECT COUNT(*) AS n FROM activities WHERE user_id = ? AND mode = ? AND city = ? AND status != 'ignored'`)
+          .bind(userId, mode, city)
+          .first<{ n: number }>(),
+  ])
 
   const doneByStreet = new Map<string, number>()
   let meters = 0
@@ -53,6 +63,8 @@ export async function getCoverageData(db: D1Database, city: CityId, mode: Mode, 
     totalSegments: totals.segments,
     totalStreets: Object.keys(totals.streets).length,
     streetsCompleted,
+    /** Your counted activities in this city and mode. */
+    activities: counted?.n ?? 0,
     completedIds: results.map((r) => r.id),
   }
 }
@@ -89,7 +101,7 @@ export async function getSyncStatusData(db: D1Database, env: Env, userId: string
           .bind(userId)
           .first<{ athlete_id: number; backfill_done: number; last_sync_at: number | null }>(),
     RateLimiter.load(db, env),
-    getState(db, 'rematch'),
+    db.prepare(`SELECT 1 AS x FROM state WHERE key = 'rematch' OR key LIKE 'rematch:%' LIMIT 1`).first(),
   ])
   return {
     /** The app has Strava API credentials. */
@@ -124,7 +136,7 @@ export async function getNeighborhoodData(db: D1Database, city: CityId, mode: Mo
           completedMeters(db, city, mode, userId, 'neighborhood'),
           activityCounts(db, city, mode, userId, 'neighborhood'),
         ])
-  return Object.entries(TOTALS[city][mode].neighborhoods)
+  return Object.entries((await totalsFor(city, mode)).neighborhoods)
     .map(([name, totalMeters]) => {
       const completedMeters = done.get(name) ?? 0
       return {
@@ -188,7 +200,7 @@ async function rankStreets(db: D1Database, city: CityId, mode: Mode, userId: str
     userId === null
       ? [new Map<string, number>(), new Map<string, number>()]
       : await Promise.all([completedMeters(db, city, mode, userId, 'name'), activityCounts(db, city, mode, userId, 'name')])
-  const rows = TOTALS[city][mode].names.map(([name, total, x0, y0, x1, y1, isStreet]) => ({
+  const rows = (await totalsFor(city, mode)).names.map(([name, total, x0, y0, x1, y1, isStreet]) => ({
     name,
     total,
     done: done.get(name) ?? 0,
@@ -274,7 +286,7 @@ const LEADERBOARD_SIZE = 50
  * done in this mode, then by activities. Returns the top of the board plus your own row.
  */
 export async function getLeaderboard(db: D1Database, city: CityId, mode: Mode, userId: string | null) {
-  const totals = TOTALS[city][mode]
+  const totals = await totalsFor(city, mode)
   const { results } = await db
     .prepare(
       `WITH done AS (
@@ -322,8 +334,8 @@ export type CityStanding = Awaited<ReturnType<typeof getPersonalStandings>>[numb
 /** Your standing in every city Floodfill covers, for one mode. */
 export async function getPersonalStandings(db: D1Database, mode: Mode, userId: string) {
   return Promise.all(
-    (Object.keys(CITIES) as CityId[]).map(async (city) => {
-      const board = await getLeaderboard(db, city, mode, userId)
+    CITY_IDS.map(async (city) => {
+      const [board, totals] = await Promise.all([getLeaderboard(db, city, mode, userId), totalsFor(city, mode)])
       const me = board.rows.find((r) => r.you) ?? board.you
       return {
         city,
@@ -332,7 +344,7 @@ export async function getPersonalStandings(db: D1Database, mode: Mode, userId: s
         players: board.players,
         percent: me?.percent ?? 0,
         meters: me?.meters ?? 0,
-        totalMeters: TOTALS[city][mode].meters,
+        totalMeters: totals.meters,
         activities: me?.activities ?? 0,
       }
     }),

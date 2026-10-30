@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronDown, Loader2, Trophy } from 'lucide-react'
 import { useState } from 'react'
-import { CITIES, DEFAULT_CITY } from '../lib/cities'
+import { CITIES, type CityId } from '../lib/cities'
 import { formatDistance, formatPercent, type Unit } from '../lib/prefs'
 import { leaderboardQuery, standingsQuery, type Mode } from '../lib/query-options'
 import type { CityStanding } from '../server/queries'
@@ -16,11 +16,13 @@ type Tab = 'city' | 'you'
 
 /** Who has covered the most of the city, and where you stand in each city. */
 export function LeaderboardCard({
+  city,
   mode,
   unit,
   signedIn,
   onGetStarted,
 }: {
+  city: CityId
   mode: Mode
   unit: Unit
   signedIn: boolean
@@ -37,7 +39,7 @@ export function LeaderboardCard({
         <div className="grid flex-1 grid-cols-2 gap-0.5 rounded-[8px] bg-fill p-0.5" role="tablist" aria-label="Leaderboard">
           {(
             [
-              ['city', CITIES[DEFAULT_CITY].name],
+              ['city', CITIES[city].name],
               ['you', 'You'],
             ] as const
           ).map(([t, label]) => (
@@ -71,7 +73,7 @@ export function LeaderboardCard({
 
       {expanded &&
         (tab === 'city' ? (
-          <CityBoard mode={mode} how={how} signedIn={signedIn} onGetStarted={onGetStarted} />
+          <CityBoard city={city} mode={mode} how={how} signedIn={signedIn} onGetStarted={onGetStarted} />
         ) : signedIn ? (
           <Standings mode={mode} unit={unit} how={how} />
         ) : (
@@ -81,8 +83,20 @@ export function LeaderboardCard({
   )
 }
 
-function CityBoard({ mode, how, signedIn, onGetStarted }: { mode: Mode; how: string; signedIn: boolean; onGetStarted: () => void }) {
-  const { data, isPending } = useQuery(leaderboardQuery(mode))
+function CityBoard({
+  city,
+  mode,
+  how,
+  signedIn,
+  onGetStarted,
+}: {
+  city: CityId
+  mode: Mode
+  how: string
+  signedIn: boolean
+  onGetStarted: () => void
+}) {
+  const { data, isPending } = useQuery(leaderboardQuery(city, mode))
   const navigate = useNavigate()
   const openProfile = (username: string) =>
     navigate({ to: '/u/$handle', params: { handle: `@${username}` }, search: (prev) => ({ ...prev, mode: prev.mode ?? 'foot' }) })

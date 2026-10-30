@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDownWideNarrow, ChevronDown, Loader2, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CityId } from '../lib/cities'
 import { formatPercent } from '../lib/prefs'
 import { streetsQuery, type Mode, type RankSort } from '../lib/query-options'
 import type { NeighborhoodProgress, StreetProgressRow } from '../server/queries'
@@ -18,12 +19,14 @@ type Tab = 'neighborhoods' | 'streets'
 
 /** Neighborhoods and streets ranked by progress. Selecting either highlights and frames it on the map. */
 export function RankingsCard({
+  city,
   mode,
   neighborhoods,
   selectedNeighborhood,
   selectedStreet,
   onSelectStreet,
 }: {
+  city: CityId
   mode: Mode
   neighborhoods: NeighborhoodProgress[]
   selectedNeighborhood: string | undefined
@@ -39,8 +42,8 @@ export function RankingsCard({
 
   // Warm the first page of streets so switching tabs is instant.
   useEffect(() => {
-    void queryClient.prefetchInfiniteQuery(streetsQuery(mode, ''))
-  }, [mode, queryClient])
+    void queryClient.prefetchInfiniteQuery(streetsQuery(city, mode, ''))
+  }, [city, mode, queryClient])
 
   return (
     <section className="surface rounded-[16px] p-4">
@@ -102,6 +105,7 @@ export function RankingsCard({
           />
         ) : (
           <StreetList
+            city={city}
             mode={mode}
             selected={selectedStreet}
             onSelect={(row) => {
@@ -239,11 +243,13 @@ function NeighborhoodList({
 }
 
 function StreetList({
+  city,
   mode,
   selected,
   onSelect,
   sort,
 }: {
+  city: CityId
   mode: Mode
   selected: string | null
   onSelect: (street: StreetProgressRow | null) => void
@@ -258,7 +264,7 @@ function StreetList({
 
   const sheet = useSheet()
   const { data, hasNextPage, fetchNextPage, isFetchingNextPage, isPending, isFetching } = useInfiniteQuery({
-    ...streetsQuery(mode, q, sort),
+    ...streetsQuery(city, mode, q, sort),
     // Keep showing the last results while a new search loads.
     placeholderData: keepPreviousData,
   })

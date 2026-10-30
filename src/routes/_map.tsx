@@ -12,9 +12,9 @@ import { GetStartedButton, GetStartedCard, NavBar, ProgressCard } from '../compo
 import { ShareButton } from '../components/ShareButton'
 import { Sheet } from '../components/Sheet'
 import { StreetCard } from '../components/StreetCard'
-import { DEFAULT_CITY } from '../lib/cities'
+import { CITIES, CITY_IDS, DEFAULT_CITY } from '../lib/cities'
 import { coverageQuery, meQuery, neighborhoodsQuery, syncStatusQuery } from '../lib/query-options'
-import { streetIds, streetIndexQuery, streetProgress } from '../lib/street-index'
+import { streetFileUrls, streetIds, streetIndexQuery, streetProgress } from '../lib/street-index'
 import { useResolvedTheme } from '../lib/use-resolved-theme'
 import { useIsSyncing, useSync } from '../lib/use-sync'
 
@@ -26,8 +26,10 @@ type StreetSelection = { name: string; bbox?: [number, number, number, number] }
 const StreetMap = lazy(() => import('../components/StreetMap'))
 
 const search = z.object({
+  /** San Francisco when absent. */
+  city: z.enum(CITY_IDS).optional().catch(undefined),
   mode: z.enum(['foot', 'bike']).catch('foot'),
-  /** Selected neighborhood, by its DataSF name. */
+  /** Selected neighborhood, by its name in the city's official boundaries. */
   hood: z.string().optional().catch(undefined),
   /** Set by the Strava OAuth callback (routes/api/strava/callback.ts); cleared once shown. */
   strava: z.string().optional().catch(undefined),
@@ -44,23 +46,36 @@ const STRAVA_NOTICES: Record<string, string> = {
 
 export const Route = createFileRoute('/_map')({
   validateSearch: search,
-  // By foot is the default, so keep it out of the URL.
-  search: { middlewares: [stripSearchParams({ mode: 'foot' })] },
-  loaderDeps: ({ search }) => ({ mode: search.mode }),
+  // The default city and by foot stay out of the URL.
+  search: { middlewares: [stripSearchParams({ city: DEFAULT_CITY, mode: 'foot' })] },
+  loaderDeps: ({ search }) => ({ city: search.city ?? DEFAULT_CITY, mode: search.mode }),
   loader: ({ context, deps }) =>
     Promise.all([
       context.queryClient.ensureQueryData(meQuery()),
-      context.queryClient.ensureQueryData(coverageQuery(deps.mode)),
+      context.queryClient.ensureQueryData(coverageQuery(deps.city, deps.mode)),
       context.queryClient.ensureQueryData(syncStatusQuery()),
-      context.queryClient.ensureQueryData(neighborhoodsQuery(deps.mode)),
+      context.queryClient.ensureQueryData(neighborhoodsQuery(deps.city, deps.mode)),
     ]),
+  head: ({ match }) => {
+    const city = match.search.city ?? DEFAULT_CITY
+    const { name } = CITIES[city]
+    return {
+      meta: [
+        { title: `Floodfill · ${name} street coverage` },
+        { name: 'description', content: `How much of ${name} you have covered, from your Strava activities.` },
+      ],
+      // Start the street network download before the map bundle loads.
+      links: streetFileUrls(city).map((href) => ({ rel: 'preload', href, as: 'fetch', crossOrigin: 'anonymous' as const })),
+    }
+  },
   component: Home,
 })
 
 function Home() {
-  const { mode, hood, strava } = Route.useSearch()
+  const search = Route.useSearch()
+  const { mode, hood, strava } = search
+  const city = search.city ?? DEFAULT_CITY
   const { prefs } = Route.useRouteContext()
-  const city = DEFAULT_CITY
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const { data: me } = useSuspenseQuery(meQuery())
@@ -88,14 +103,16 @@ function Home() {
   useEffect(() => {
     if (notice === STRAVA_NOTICES.connected && sync.isSuccess) setNotice(null)
   }, [notice, sync.isSuccess])
-  const { data: coverage } = useSuspenseQuery(coverageQuery(mode))
-  const { data: hoods } = useSuspenseQuery(neighborhoodsQuery(mode))
+  const { data: coverage } = useSuspenseQuery(coverageQuery(city, mode))
+  const { data: hoods } = useSuspenseQuery(neighborhoodsQuery(city, mode))
   const selected = hoods.some((h) => h.name === hood) ? hood : undefined
   const theme = useResolvedTheme(prefs.theme)
 
   // Selected street: the index expands a name or a tapped segment to all of the street's segments.
   const { data: streetIndex } = useQuery(streetIndexQuery(city))
   const [street, setStreet] = useState<StreetSelection | null>(null)
+  // A street belongs to one city.
+  useEffect(() => setStreet(null), [city])
   const selectedStreetIds = useMemo(() => {
     if (!streetIndex || !street) return NO_IDS
     return 'name' in street ? (streetIndex.byName.get(street.name) ?? NO_IDS) : streetIds(streetIndex, street.segmentId)
@@ -128,9 +145,9 @@ function Home() {
   // Warm the other mode so switching is instant.
   useEffect(() => {
     const other = mode === 'foot' ? 'bike' : 'foot'
-    void queryClient.prefetchQuery(coverageQuery(other))
-    void queryClient.prefetchQuery(neighborhoodsQuery(other))
-  }, [mode, queryClient])
+    void queryClient.prefetchQuery(coverageQuery(city, other))
+    void queryClient.prefetchQuery(neighborhoodsQuery(city, other))
+  }, [city, mode, queryClient])
 
   const noticeBanner = notice && (
     <div role="status" className="surface flex items-center gap-2 rounded-[8px] px-3 py-2 text-13 text-ink">
@@ -146,7 +163,9 @@ function Home() {
     <main className="relative h-dvh w-full overflow-hidden">
       <ClientOnly>
         <Suspense>
+          {/* A fresh map per city: its layers and state all belong to one city's streets. */}
           <StreetMap
+            key={city}
             city={city}
             mode={mode}
             completedIds={coverage.completedIds}
@@ -220,7 +239,7 @@ function Home() {
           <>
             {notice && <div className="hidden sm:block">{noticeBanner}</div>}
             {me ? (
-              <ProgressCard mode={mode} unit={prefs.unit} stravaConnected={me.stravaConnected} />
+              <ProgressCard city={city} mode={mode} unit={prefs.unit} stravaConnected={me.stravaConnected} />
             ) : (
               <GetStartedCard city={city} onGetStarted={getStarted} />
             )}
@@ -229,6 +248,7 @@ function Home() {
       >
         {me && (
           <RankingsCard
+            city={city}
             mode={mode}
             neighborhoods={hoods}
             selectedNeighborhood={selected}
@@ -236,7 +256,7 @@ function Home() {
             onSelectStreet={(row) => setStreet(row ? { name: row.name, bbox: row.bbox } : null)}
           />
         )}
-        <LeaderboardCard mode={mode} unit={prefs.unit} signedIn={me !== null} onGetStarted={getStarted} />
+        <LeaderboardCard city={city} mode={mode} unit={prefs.unit} signedIn={me !== null} onGetStarted={getStarted} />
         <p className="border-t border-line px-4 py-3 text-12 text-ink-2 sm:hidden">
           <Credit />
         </p>

@@ -1,4 +1,5 @@
 import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
+import type { CityId } from './cities'
 import {
   getCoverage,
   getLeaderboardFn,
@@ -21,10 +22,10 @@ export const meQuery = () =>
     staleTime: 5 * 60_000,
   })
 
-export const leaderboardQuery = (mode: Mode) =>
+export const leaderboardQuery = (city: CityId, mode: Mode) =>
   queryOptions({
-    queryKey: ['leaderboard', mode],
-    queryFn: () => getLeaderboardFn({ data: { mode } }),
+    queryKey: ['leaderboard', city, mode],
+    queryFn: () => getLeaderboardFn({ data: { city, mode } }),
     staleTime: 60_000,
   })
 
@@ -43,17 +44,17 @@ export const profileQuery = (username: string) =>
     staleTime: 60_000,
   })
 
-export const coverageQuery = (mode: Mode) =>
+export const coverageQuery = (city: CityId, mode: Mode) =>
   queryOptions({
-    queryKey: ['coverage', mode],
-    queryFn: () => getCoverage({ data: { mode } }),
+    queryKey: ['coverage', city, mode],
+    queryFn: () => getCoverage({ data: { city, mode } }),
     staleTime: 60_000,
   })
 
-export const neighborhoodsQuery = (mode: Mode) =>
+export const neighborhoodsQuery = (city: CityId, mode: Mode) =>
   queryOptions({
-    queryKey: ['neighborhoods', mode],
-    queryFn: () => getNeighborhoods({ data: { mode } }),
+    queryKey: ['neighborhoods', city, mode],
+    queryFn: () => getNeighborhoods({ data: { city, mode } }),
     staleTime: 60_000,
   })
 
@@ -62,19 +63,19 @@ export const STREET_PAGE = 50
 /** Streets ranked by progress, fetched a page at a time as the list scrolls. */
 export type RankSort = 'progress' | 'activities'
 
-export const streetsQuery = (mode: Mode, q: string, sort: RankSort = 'progress') =>
+export const streetsQuery = (city: CityId, mode: Mode, q: string, sort: RankSort = 'progress') =>
   infiniteQueryOptions({
-    queryKey: ['streets', mode, q, sort],
-    queryFn: ({ pageParam }) => getStreets({ data: { mode, q, offset: pageParam, limit: STREET_PAGE, sort } }),
+    queryKey: ['streets', city, mode, q, sort],
+    queryFn: ({ pageParam }) => getStreets({ data: { city, mode, q, offset: pageParam, limit: STREET_PAGE, sort } }),
     initialPageParam: 0,
     getNextPageParam: (last) => last.nextOffset,
     staleTime: 60_000,
   })
 
-export const streetDetailQuery = (mode: Mode, target: { name: string } | { segmentId: number }) =>
+export const streetDetailQuery = (city: CityId, mode: Mode, target: { name: string } | { segmentId: number }) =>
   queryOptions({
-    queryKey: ['street', mode, target],
-    queryFn: () => getStreet({ data: { mode, ...target } }),
+    queryKey: ['street', city, mode, target],
+    queryFn: () => getStreet({ data: { city, mode, ...target } }),
     staleTime: 60_000,
   })
 

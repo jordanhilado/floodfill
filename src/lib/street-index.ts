@@ -1,27 +1,54 @@
 import { queryOptions } from '@tanstack/react-query'
 import type { CityId } from './cities'
 import { haversine } from './geo'
+import streetFiles from './street-files.json'
 
 export type SegmentInfo = { id: number; name: string | null; path: boolean; foot: boolean; bike: boolean; hood: number | null; length: number }
 export type StreetIndex = { byId: Map<number, SegmentInfo>; byName: Map<string, number[]> }
 
-type Feature = {
+export type StreetFeature = {
+  type: 'Feature'
   id: number
   properties: { n: string | null; k: number; f: number; b: number; h?: number }
-  geometry: { coordinates: [number, number][] }
+  geometry: { type: 'LineString'; coordinates: [number, number][] }
+}
+export type StreetCollection = { type: 'FeatureCollection'; features: StreetFeature[] }
+
+const loaded = new Map<CityId, Promise<StreetCollection>>()
+
+/** The static files holding a city's streets: big cities are split (see scripts/build-streets.ts). */
+export function streetFileUrls(city: CityId) {
+  const count = (streetFiles as Record<string, { parts: number }>)[city]?.parts ?? 1
+  return Array.from({ length: count }, (_, i) => `/data/${city}/streets-${i}.geojson`)
+}
+
+/** A city's streets, as drawn on the map: every file, fetched once and joined. */
+export function loadStreets(city: CityId): Promise<StreetCollection> {
+  let p = loaded.get(city)
+  if (!p) {
+    p = Promise.all(
+      streetFileUrls(city).map(async (url) => {
+        const res = await fetch(url)
+        if (!res.ok) throw new Error(`Couldn't load streets (${res.status})`)
+        return ((await res.json()) as StreetCollection).features
+      }),
+    ).then((parts) => ({ type: 'FeatureCollection', features: parts.flat() }))
+    p.catch(() => loaded.delete(city))
+    loaded.set(city, p)
+  }
+  return p
 }
 
 /**
  * Segment lookup for tapping a street: which segments share its name, how long each is and
- * where it sits. Built from the same static GeoJSON the map draws (a cache hit after the map loads).
+ * where it sits. Built from the same streets the map draws.
  */
 export const streetIndexQuery = (city: CityId) =>
   queryOptions({
     queryKey: ['street-index', city],
     staleTime: Infinity,
     queryFn: async (): Promise<StreetIndex> => {
-      const res = await fetch(`/data/${city}/streets.geojson`)
-      const { features } = (await res.json()) as { features: Feature[] }
+      const { features } = await loadStreets(city)
       const byId = new Map<number, SegmentInfo>()
       const byName = new Map<string, number[]>()
       for (const f of features) {

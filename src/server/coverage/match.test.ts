@@ -6,7 +6,7 @@ import { decodePolyline, encodePolyline } from '../../lib/polyline'
 import { isComplete, matchTrack, sampleSegment, type IndexedSegment } from './match'
 
 type Feature = { id: number; properties: { n: string; f: number; b: number }; geometry: { coordinates: [number, number][] } }
-const geo = JSON.parse(readFileSync(new URL('../../../public/data/sf/streets.geojson', import.meta.url), 'utf8')) as {
+const geo = JSON.parse(readFileSync(new URL('../../../public/data/sf/streets-0.geojson', import.meta.url), 'utf8')) as {
   features: Feature[]
 }
 const project = makeProjector(CITIES.sf.center[1])
