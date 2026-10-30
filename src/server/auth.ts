@@ -84,8 +84,10 @@ export async function startSignIn(env: Env, identifier: string) {
     await sendCode(env, email, code)
   } catch (err) {
     // E.g. the sender domain isn't set up for sending yet. Void the code that never arrived but
-    // keep the row, so its wrong-guess count still applies.
-    console.error('[floodfill] sign-in email failed', err)
+    // keep the row, so its wrong-guess count still applies. The binding's errors carry a string
+    // `code` (E_SENDER_NOT_VERIFIED, ...); log it, since Workers logs keep only an error's stack.
+    const { code: errCode, message } = (err ?? {}) as { code?: string; message?: string }
+    console.error(`[floodfill] sign-in email failed: ${errCode ?? 'no code'} ${message ?? String(err)}`)
     await db.prepare('UPDATE login_codes SET expires_at = 0 WHERE email = ?').bind(email).run()
     throw new AuthError("Couldn't send your sign-in code right now. Try again later.")
   }
