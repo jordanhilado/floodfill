@@ -102,6 +102,15 @@ Add an entry to `src/lib/cities.ts`, run `pnpm streets <id>`, add the generated
 `src/lib/totals.<id>.json` to `TOTALS` in `src/server/queries.ts`, and load
 `db/seed/<id>-segments.sql`. Only San Francisco is enabled.
 
+## Deploys
+
+Every push to `main` deploys through Cloudflare Workers Builds: it runs `pnpm typecheck`,
+`pnpm test` and `pnpm run build`, then applies pending D1 migrations
+(`wrangler d1 migrations apply floodfill --remote`) and runs `wrangler deploy`. A failed check or
+migration stops the deploy. Seeds are not applied automatically: load a new seed into production
+D1 before merging the change that ships its matching `totals.<city>.json`. `packageManager` in
+`package.json` pins the pnpm version the build uses.
+
 ## Deploying your own
 
 `wrangler d1 create floodfill` and put the new id in `wrangler.jsonc` (the one there is this
