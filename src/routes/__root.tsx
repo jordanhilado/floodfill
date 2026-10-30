@@ -11,8 +11,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
-      { title: 'Floodfill · San Francisco street coverage' },
-      { name: 'description', content: 'How much of San Francisco you have covered, from your Strava activities.' },
+      // The map route names the city.
+      { title: 'Floodfill · Street coverage' },
+      { name: 'description', content: 'How much of your city you have covered, from your Strava activities.' },
     ],
     links: [
       { rel: 'stylesheet', href: appCss },
@@ -20,8 +21,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: 'icon', href: '/favicon-light.png', type: 'image/png', media: '(prefers-color-scheme: light)' },
       { rel: 'icon', href: '/favicon-dark.png', type: 'image/png', media: '(prefers-color-scheme: dark)' },
       { rel: 'apple-touch-icon', href: '/logo-light.png' },
-      // Start the street network download before the map bundle loads.
-      { rel: 'preload', href: '/data/sf/streets.geojson', as: 'fetch', crossOrigin: 'anonymous' },
       { rel: 'preconnect', href: 'https://tiles.openfreemap.org' },
     ],
   }),

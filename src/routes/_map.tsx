@@ -12,9 +12,9 @@ import { GetStartedButton, GetStartedCard, NavBar, ProgressCard } from '../compo
 import { ShareButton } from '../components/ShareButton'
 import { Sheet } from '../components/Sheet'
 import { StreetCard } from '../components/StreetCard'
-import { CITY_IDS, DEFAULT_CITY } from '../lib/cities'
+import { CITIES, CITY_IDS, DEFAULT_CITY } from '../lib/cities'
 import { coverageQuery, meQuery, neighborhoodsQuery, syncStatusQuery } from '../lib/query-options'
-import { streetIds, streetIndexQuery, streetProgress } from '../lib/street-index'
+import { streetFileUrls, streetIds, streetIndexQuery, streetProgress } from '../lib/street-index'
 import { useResolvedTheme } from '../lib/use-resolved-theme'
 import { useIsSyncing, useSync } from '../lib/use-sync'
 
@@ -56,6 +56,18 @@ export const Route = createFileRoute('/_map')({
       context.queryClient.ensureQueryData(syncStatusQuery()),
       context.queryClient.ensureQueryData(neighborhoodsQuery(deps.city, deps.mode)),
     ]),
+  head: ({ match }) => {
+    const city = match.search.city ?? DEFAULT_CITY
+    const { name } = CITIES[city]
+    return {
+      meta: [
+        { title: `Floodfill · ${name} street coverage` },
+        { name: 'description', content: `How much of ${name} you have covered, from your Strava activities.` },
+      ],
+      // Start the street network download before the map bundle loads.
+      links: streetFileUrls(city).map((href) => ({ rel: 'preload', href, as: 'fetch', crossOrigin: 'anonymous' as const })),
+    }
+  },
   component: Home,
 })
 
@@ -151,7 +163,9 @@ function Home() {
     <main className="relative h-dvh w-full overflow-hidden">
       <ClientOnly>
         <Suspense>
+          {/* A fresh map per city: its layers and state all belong to one city's streets. */}
           <StreetMap
+            key={city}
             city={city}
             mode={mode}
             completedIds={coverage.completedIds}
