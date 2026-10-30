@@ -5,7 +5,7 @@ import { DOMAIN } from '../lib/brand'
 import { CITIES, type CityId } from '../lib/cities'
 import { formatDistance, formatPercent, type Prefs, type Unit } from '../lib/prefs'
 import { coverageQuery, type Mode } from '../lib/query-options'
-import type { ResolvedTheme } from '../lib/theme'
+import { SCHEMES, type ResolvedTheme, type Scheme } from '../lib/theme'
 import { CityDialog } from './CityDialog'
 import { InfoDialog } from './InfoDialog'
 import { SettingsDialog } from './SettingsDialog'
@@ -48,11 +48,13 @@ export function NavBar({
         type="button"
         onClick={() => setOpen('city')}
         aria-haspopup="dialog"
-        aria-label={`City: ${CITIES[city].name}. Change city`}
+        aria-label={`City: ${CITIES[city].name}, ${CITIES[city].state}. Change city`}
         className="-ml-1 flex h-8 min-w-0 items-center gap-1 rounded-[8px] px-1 text-13 text-ink-2 transition-colors hover:bg-fill-strong hover:text-ink"
       >
         <MapPin size={14} strokeWidth={1.75} className="shrink-0" />
-        <span className="truncate">{CITIES[city].name}</span>
+        <span className="truncate">
+          {CITIES[city].name}, {CITIES[city].state}
+        </span>
       </button>
       <div className="ml-auto flex shrink-0 items-center">
         {/* Phones: the main call to action lives in the nav's top-right corner; desktop floats it on the map. */}
@@ -89,7 +91,7 @@ export function GetStartedButton({ onClick, className = '' }: { onClick: () => v
 }
 
 /** What signed-out visitors see in place of their progress. */
-export function GetStartedCard({ city, onGetStarted }: { city: CityId; onGetStarted: () => void }) {
+export function GetStartedCard({ city, scheme, onGetStarted }: { city: CityId; scheme: Scheme; onGetStarted: () => void }) {
   return (
     <section className="surface rounded-[16px] p-4">
       <h1 className="text-14 font-medium">How much of {CITIES[city].name} have you covered?</h1>
@@ -97,7 +99,7 @@ export function GetStartedCard({ city, onGetStarted }: { city: CityId; onGetStar
         Connect Strava and watch every street and path you've run, walked or ridden turn{' '}
         <span className="inline-flex items-center gap-1 text-ink">
           <span className="size-2 rounded-full bg-done" aria-hidden />
-          blue
+          {SCHEMES[scheme].doneName}
         </span>
         . Then see where you rank in the city.
       </p>

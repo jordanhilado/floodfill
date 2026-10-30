@@ -48,25 +48,7 @@ export function RankingsCard({
   return (
     <section className="surface rounded-[16px] p-4">
       <div className="flex items-center gap-2">
-        <div className="grid flex-1 grid-cols-2 gap-0.5 rounded-[8px] bg-fill p-0.5" role="tablist" aria-label="Rankings">
-          {(['neighborhoods', 'streets'] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-selected={tab === t}
-              onClick={() => {
-                setTab(t)
-                setExpanded(true)
-              }}
-              className={`h-7 rounded-[8px] text-13 transition-colors ${
-                tab === t ? 'bg-surface font-medium text-ink shadow-[0_0_0_1px_var(--color-line)]' : 'text-ink-2 hover:text-ink'
-              }`}
-            >
-              {t === 'neighborhoods' ? 'Neighborhoods' : 'Paths'}
-            </button>
-          ))}
-        </div>
+        <h2 className="mr-auto text-14 font-medium">Rankings</h2>
         <button
           type="button"
           onClick={() => setSort((s) => (s === 'progress' ? 'activities' : 'progress'))}
@@ -93,6 +75,25 @@ export function RankingsCard({
         >
           <ChevronDown size={14} strokeWidth={2} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
         </button>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-0.5 rounded-[8px] bg-fill p-0.5" role="tablist" aria-label="Rankings">
+        {(['neighborhoods', 'streets'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => {
+              setTab(t)
+              setExpanded(true)
+            }}
+            className={`h-7 rounded-[8px] text-13 transition-colors ${
+              tab === t ? 'bg-surface font-medium text-ink shadow-[0_0_0_1px_var(--color-line)]' : 'text-ink-2 hover:text-ink'
+            }`}
+          >
+            {t === 'neighborhoods' ? 'Neighborhoods' : 'Paths'}
+          </button>
+        ))}
       </div>
 
       {expanded &&

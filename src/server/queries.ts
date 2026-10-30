@@ -1,8 +1,11 @@
 import type { ModeTotals } from '../../scripts/totals'
 import { CITIES, CITY_IDS, type CityId } from '../lib/cities'
+import { decodePolyline } from '../lib/polyline'
 import type { Mode } from './coverage/apply'
+import { rasterize, type CoverageRaster } from './coverage/raster'
 import { stravaConfigured } from './strava/client'
 import { RateLimiter } from './strava/rate-limit'
+import { rematchPending } from './sync'
 
 // Every per-user query below is skipped for signed-out visitors (null), who see the city with zero
 // progress without touching D1.
@@ -101,7 +104,7 @@ export async function getSyncStatusData(db: D1Database, env: Env, userId: string
           .bind(userId)
           .first<{ athlete_id: number; backfill_done: number; last_sync_at: number | null }>(),
     RateLimiter.load(db, env),
-    db.prepare(`SELECT 1 AS x FROM state WHERE key = 'rematch' OR key LIKE 'rematch:%' LIMIT 1`).first(),
+    rematchPending(db),
   ])
   return {
     /** The app has Strava API credentials. */
@@ -119,7 +122,7 @@ export async function getSyncStatusData(db: D1Database, env: Env, userId: string
     backfillDone: account?.backfill_done === 1,
     lastSyncAt: account?.last_sync_at ?? null,
     /** The street network changed and stored tracks still need re-matching (free). */
-    rematchPending: rematch !== null,
+    rematchPending: rematch,
     lastRun: lastRun ?? null,
     rate: limiter.snapshot(),
   }
@@ -375,4 +378,29 @@ export async function getProfile(db: D1Database, username: string) {
     foot,
     bike,
   }
+}
+
+export type ProfileMaps = Awaited<ReturnType<typeof getProfileMaps>>
+
+/**
+ * An image of the paths someone has completed in each city, for one mode: null in cities where
+ * they haven't completed any, and empty when no one uses the username.
+ */
+export async function getProfileMaps(db: D1Database, username: string, mode: Mode) {
+  const maps: Partial<Record<CityId, CoverageRaster | null>> = {}
+  const user = await db.prepare('SELECT id FROM users WHERE username = ?').bind(username).first<{ id: string }>()
+  if (!user) return maps
+  await Promise.all(
+    CITY_IDS.map(async (city) => {
+      const { results } = await db
+        .prepare(
+          `SELECT s.coords FROM coverage c JOIN segments s ON s.id = c.segment_id
+           WHERE c.user_id = ? AND c.mode = ? AND c.completed = 1 AND s.city = ? AND s.${mode} = 1`,
+        )
+        .bind(user.id, mode, city)
+        .all<{ coords: string }>()
+      maps[city] = results.length ? rasterize(city, results.map((r) => decodePolyline(r.coords, 6))) : null
+    }),
+  )
+  return maps
 }

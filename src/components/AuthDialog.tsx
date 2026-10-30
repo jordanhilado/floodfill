@@ -137,7 +137,7 @@ function IdentifyStep({
   }
   return (
     <form onSubmit={submit}>
-      <p className="mt-2 text-13 text-ink-2">Sign in or create an account. We'll email you a 6-digit code; there's no password.</p>
+      <p className="mt-2 text-13 text-ink-2">Sign in or create an account. We'll email you a 6-digit code.</p>
       <Field label="Email or username" error={error}>
         <input
           className={inputClass}

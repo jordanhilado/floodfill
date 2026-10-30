@@ -97,7 +97,7 @@ export function StravaSettings() {
       </p>
       {status.rematchPending && !syncing && (
         <p className="mt-2 text-12 text-ink-2">
-          Sync to re-match your activities against the new paths. This uses no Strava requests.
+          Matching your activities against the new streets and paths. This uses no Strava requests.
         </p>
       )}
       {a.awaitingDetail > 0 && (

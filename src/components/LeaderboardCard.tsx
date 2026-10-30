@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { ChevronDown, Loader2, Trophy } from 'lucide-react'
+import { ChevronDown, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { CITIES, type CityId } from '../lib/cities'
 import { formatDistance, formatPercent, type Unit } from '../lib/prefs'
@@ -34,32 +34,8 @@ export function LeaderboardCard({
 
   return (
     <section className="surface rounded-[16px] p-4">
-      <div className="flex items-center gap-2">
-        <Trophy size={20} strokeWidth={1.75} className="shrink-0 text-ink-2" aria-hidden />
-        <div className="grid flex-1 grid-cols-2 gap-0.5 rounded-[8px] bg-fill p-0.5" role="tablist" aria-label="Leaderboard">
-          {(
-            [
-              ['city', CITIES[city].name],
-              ['you', 'You'],
-            ] as const
-          ).map(([t, label]) => (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-selected={tab === t}
-              onClick={() => {
-                setTab(t)
-                setExpanded(true)
-              }}
-              className={`h-7 truncate rounded-[8px] px-2 text-13 transition-colors ${
-                tab === t ? 'bg-surface font-medium text-ink shadow-[0_0_0_1px_var(--color-line)]' : 'text-ink-2 hover:text-ink'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+      <div className="flex min-h-7 items-center justify-between gap-2">
+        <h2 className="text-14 font-medium">Leaderboard</h2>
         <button
           type="button"
           onClick={() => setExpanded((e) => !e)}
@@ -69,6 +45,30 @@ export function LeaderboardCard({
         >
           <ChevronDown size={14} strokeWidth={2} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
         </button>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-0.5 rounded-[8px] bg-fill p-0.5" role="tablist" aria-label="Leaderboard">
+        {(
+          [
+            ['city', CITIES[city].name],
+            ['you', 'You'],
+          ] as const
+        ).map(([t, label]) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => {
+              setTab(t)
+              setExpanded(true)
+            }}
+            className={`h-7 truncate rounded-[8px] px-2 text-13 transition-colors ${
+              tab === t ? 'bg-surface font-medium text-ink shadow-[0_0_0_1px_var(--color-line)]' : 'text-ink-2 hover:text-ink'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {expanded &&

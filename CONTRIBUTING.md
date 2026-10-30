@@ -55,7 +55,8 @@ how you tested it, and anything a reviewer should know.
 ## Rebuilding the street network
 
 Run `pnpm streets <city> && pnpm seed <city>`, then restart `pnpm dev`. Stored activities in that
-city are matched again on the next sync, without new Strava requests.
+city are matched again as soon as the map is opened (or by the next cron sync), without new Strava
+requests.
 
 ## Adding a city
 
@@ -65,5 +66,6 @@ city are matched again on the next sync, without new Strava requests.
 2. Run `pnpm streets <city>`. It writes the map data (split into parts under Cloudflare's file size
    limit), the seed, the totals and the neighborhood bounds. `pnpm test` checks they agree.
 3. Run `pnpm seed <city>` locally. Before the pull request is merged, load the seed into production
-   with `pnpm seed <city> --remote`. The next sync then credits existing activities in the city,
-   including ones it skipped before the city existed.
+   with `pnpm seed <city> --remote`. Once the pull request is deployed, the first visit to the map
+   (or the next cron sync) credits everyone's existing activities in the city, including ones
+   skipped before the city existed.

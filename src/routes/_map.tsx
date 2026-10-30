@@ -16,7 +16,7 @@ import { CITIES, CITY_IDS, DEFAULT_CITY } from '../lib/cities'
 import { coverageQuery, meQuery, neighborhoodsQuery, syncStatusQuery } from '../lib/query-options'
 import { streetFileUrls, streetIds, streetIndexQuery, streetProgress } from '../lib/street-index'
 import { useResolvedTheme } from '../lib/use-resolved-theme'
-import { useIsSyncing, useSync } from '../lib/use-sync'
+import { useIsSyncing, useRematch, useSync } from '../lib/use-sync'
 
 const NO_IDS: number[] = []
 
@@ -103,6 +103,9 @@ function Home() {
   useEffect(() => {
     if (notice === STRAVA_NOTICES.connected && sync.isSuccess) setNotice(null)
   }, [notice, sync.isSuccess])
+  // A city that just opened (or was rebuilt) credits everyone's stored activities right away.
+  const { data: syncStatus } = useSuspenseQuery(syncStatusQuery())
+  useRematch(syncStatus.rematchPending)
   const { data: coverage } = useSuspenseQuery(coverageQuery(city, mode))
   const { data: hoods } = useSuspenseQuery(neighborhoodsQuery(city, mode))
   const selected = hoods.some((h) => h.name === hood) ? hood : undefined
@@ -241,7 +244,7 @@ function Home() {
             {me ? (
               <ProgressCard city={city} mode={mode} unit={prefs.unit} stravaConnected={me.stravaConnected} />
             ) : (
-              <GetStartedCard city={city} onGetStarted={getStarted} />
+              <GetStartedCard city={city} scheme={prefs.scheme} onGetStarted={getStarted} />
             )}
           </>
         }

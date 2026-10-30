@@ -54,16 +54,7 @@ export async function runSync(
 
   const started = Date.now()
   const deadline = started + opts.timeBudgetMs
-  const lockUntil = deadline + 60_000
-  const lock = await db
-    .prepare(
-      `INSERT INTO state (key, value, updated_at) VALUES ('sync_lock', ?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-       WHERE CAST(state.value AS INTEGER) < ?`,
-    )
-    .bind(String(lockUntil), started, started)
-    .run()
-  if (lock.meta.changes !== 1) return { ...result, stopReason: 'busy' }
+  if (!(await takeLock(db, started, deadline + 60_000))) return { ...result, stopReason: 'busy' }
 
   const run = await db
     .prepare('INSERT INTO sync_runs (trigger, started_at, user_id) VALUES (?, ?, ?) RETURNING id')
@@ -98,11 +89,60 @@ export async function runSync(
       db
         .prepare('UPDATE sync_runs SET finished_at = ?, requests = ?, listed = ?, detailed = ?, stop_reason = ?, error = ? WHERE id = ?')
         .bind(Date.now(), result.requests, result.listed, result.detailed, result.stopReason, result.error, run!.id),
-      db.prepare(`UPDATE state SET value = '0' WHERE key = 'sync_lock'`),
+      releaseLock(db),
     ])
   }
   return result
 }
+
+export type RematchResult = { stopReason: 'complete' | 'time' | 'busy'; rematched: number }
+
+/**
+ * Only the re-matching step of a sync, with no Strava requests. Pages call this while a rematch
+ * is pending, so a new city's progress is there as soon as the deploy that opens it is live,
+ * rather than after the next cron run or someone pressing Sync.
+ */
+export async function runRematch(env: Env, timeBudgetMs: number): Promise<RematchResult> {
+  const db = env.DB
+  if (!(await rematchPending(db))) return { stopReason: 'complete', rematched: 0 }
+  const started = Date.now()
+  const deadline = started + timeBudgetMs
+  if (!(await takeLock(db, started, deadline + 60_000))) return { stopReason: 'busy', rematched: 0 }
+  try {
+    const rematched = await rematch(db, () => Date.now() > deadline)
+    return { stopReason: (await rematchPending(db)) ? 'time' : 'complete', rematched }
+  } finally {
+    await releaseLock(db).run()
+  }
+}
+
+/**
+ * Whether stored tracks still need re-matching in an enabled city. A city's seed goes into
+ * production before the deploy that enables it, and its flag waits for that deploy.
+ */
+export async function rematchPending(db: D1Database) {
+  const keys = ['rematch', ...CITY_IDS.map((city) => `rematch:${city}`)]
+  const row = await db
+    .prepare(`SELECT 1 AS x FROM state WHERE key IN (${keys.map(() => '?').join(',')}) LIMIT 1`)
+    .bind(...keys)
+    .first()
+  return row !== null
+}
+
+/** Takes the sync lock until `until` unless another sync or rematch holds it: one runs at a time. */
+async function takeLock(db: D1Database, now: number, until: number) {
+  const lock = await db
+    .prepare(
+      `INSERT INTO state (key, value, updated_at) VALUES ('sync_lock', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+       WHERE CAST(state.value AS INTEGER) < ?`,
+    )
+    .bind(String(until), now, now)
+    .run()
+  return lock.meta.changes === 1
+}
+
+const releaseLock = (db: D1Database) => db.prepare(`UPDATE state SET value = '0' WHERE key = 'sync_lock'`)
 
 /** One user's import: new activities, history backfill, then full GPS streams. */
 async function syncAccount(

@@ -18,12 +18,13 @@ import {
   getNeighborhoodData,
   getPersonalStandings,
   getProfile,
+  getProfileMaps,
   getStreetDetail,
   getStreetPage,
   getSyncStatusData,
 } from './queries'
 import { authorizeUrl, stravaConfigured } from './strava/client'
-import { runSync } from './sync'
+import { runRematch, runSync } from './sync'
 
 const mode = z.enum(['foot', 'bike'])
 const city = z.enum(CITY_IDS)
@@ -168,6 +169,11 @@ export const getProfileFn = createServerFn({ method: 'GET' })
   .validator(z.object({ username: z.string().min(1).max(40) }))
   .handler(({ data }) => getProfile(env.DB, data.username))
 
+/** Images of the paths someone has completed in each city, for one mode. */
+export const getProfileMapsFn = createServerFn({ method: 'GET' })
+  .validator(z.object({ username: z.string().min(1).max(40), mode }))
+  .handler(({ data }) => getProfileMaps(env.DB, data.username, data.mode))
+
 // ── Sync ─────────────────────────────────────────────────────────────────────
 
 export const getSyncStatus = createServerFn({ method: 'GET' }).handler(async () =>
@@ -182,3 +188,10 @@ export const syncNow = createServerFn({ method: 'POST' }).handler(async () => {
   const user = await requireUser(env.DB)
   return runSync(env, { trigger: 'manual', timeBudgetMs: 20_000, userId: user.id })
 })
+
+/**
+ * Runs one bounded batch of re-matching after a city opens or its network is rebuilt. Pages call
+ * this for every visitor while a rematch is pending: it makes no Strava requests, and once there
+ * is nothing left to match it is a single read.
+ */
+export const rematchNow = createServerFn({ method: 'POST' }).handler(() => runRematch(env, 20_000))

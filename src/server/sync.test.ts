@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 import { seededDatabase } from '../../scripts/totals'
 import { decodePolyline, encodePolyline } from '../lib/polyline'
-import { runSync } from './sync'
+import { rematchPending, runRematch, runSync } from './sync'
 
 /** D1's statement API over an in-memory SQLite database. */
 function d1(db: DatabaseSync) {
@@ -76,5 +76,45 @@ describe('rematch after a city is added', async () => {
   it('leaves activities outside every city, or of other sports, ignored', () => {
     expect(activity(2)).toEqual({ city: null, status: 'ignored' })
     expect(activity(3)).toEqual({ city: null, status: 'ignored' })
+  })
+})
+
+describe('rematch from a page visit', async () => {
+  const db = await seededDatabase('sf')
+  const rows = db.prepare(`SELECT coords FROM segments WHERE city = 'sf' AND name = 'Market Street' AND foot = 1 ORDER BY id LIMIT 8`).all() as {
+    coords: string
+  }[]
+  const market = encodePolyline(rows.flatMap((r) => decodePolyline(r.coords, 6)))
+  db.prepare(
+    `INSERT INTO activities (id, user_id, mode, city, start_date, start_ts, summary_polyline, status, updated_at)
+     VALUES (1, 'u1', 'foot', NULL, '', 100, ?, 'ignored', 0)`,
+  ).run(market)
+  db.prepare(`INSERT INTO state (key, value, updated_at) VALUES ('rematch:sf', '{"ts":0,"id":0}', 0)`).run()
+  db.prepare(`INSERT INTO state (key, value, updated_at) VALUES ('rematch:atlantis', '{"ts":0,"id":0}', 0)`).run()
+  // No Strava credentials: re-matching never calls Strava.
+  const env = { DB: d1(db) } as unknown as Env
+  const lock = (until: number) =>
+    db.prepare(`INSERT INTO state (key, value, updated_at) VALUES ('sync_lock', ?, 0) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(String(until))
+
+  it('waits while another sync holds the lock', async () => {
+    lock(Date.now() + 60_000)
+    expect(await runRematch(env, 60_000)).toEqual({ stopReason: 'busy', rematched: 0 })
+    lock(0)
+  })
+
+  it('credits a newly enabled city and ignores flags for cities not deployed yet', async () => {
+    expect(await rematchPending(env.DB)).toBe(true)
+    expect(await runRematch(env, 60_000)).toEqual({ stopReason: 'complete', rematched: 1 })
+    expect(db.prepare('SELECT city, status FROM activities WHERE id = 1').get()).toEqual({ city: 'sf', status: 'summary' })
+    const covered = db.prepare(`SELECT COUNT(*) AS n FROM coverage WHERE user_id = 'u1' AND mode = 'foot' AND completed = 1`).get() as {
+      n: number
+    }
+    expect(covered.n).toBeGreaterThan(0)
+    expect(await rematchPending(env.DB)).toBe(false)
+    expect(db.prepare(`SELECT value FROM state WHERE key = 'sync_lock'`).get()).toEqual({ value: '0' })
+  })
+
+  it('does nothing once there is nothing to match', async () => {
+    expect(await runRematch(env, 60_000)).toEqual({ stopReason: 'complete', rematched: 0 })
   })
 })
