@@ -31,16 +31,17 @@ describe('rematch after a city is added', async () => {
     coords: string
   }[]
   const market = encodePolyline(rows.flatMap((r) => decodePolyline(r.coords, 6)))
-  const centralPark = encodePolyline([
-    [40.7812, -73.9665],
-    [40.7712, -73.9742],
+  // Chicago's lakefront, outside every city Floodfill covers.
+  const lakefront = encodePolyline([
+    [41.8917, -87.6086],
+    [41.8676, -87.6136],
   ])
   const insert = db.prepare(
     `INSERT INTO activities (id, user_id, mode, city, start_date, start_ts, summary_polyline, status, updated_at)
      VALUES (?, 'u1', ?, NULL, '', ?, ?, 'ignored', 0)`,
   )
   insert.run(1, 'foot', 100, market) // in a city that has since been enabled
-  insert.run(2, 'foot', 200, centralPark) // outside every enabled city
+  insert.run(2, 'foot', 200, lakefront) // outside every enabled city
   insert.run(3, null, 300, market) // not a foot or bike activity
   const env = {
     DB: d1(db),
