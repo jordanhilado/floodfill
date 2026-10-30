@@ -27,7 +27,7 @@ export function StreetCard({
   unit: Unit
   onClose: () => void
 }) {
-  const { data: detail } = useQuery(streetDetailQuery(mode, target))
+  const { data: detail } = useQuery(streetDetailQuery(city, mode, target))
   const segments = ids.map((id) => index.byId.get(id)!).filter(Boolean)
   const first = segments[0]
   if (!first) return null

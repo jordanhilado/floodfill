@@ -1,6 +1,7 @@
 import { DOMAIN } from './brand'
 import type { CityId } from './cities'
 import { CITIES } from './cities'
+import { loadStreets } from './street-index'
 import { formatDistance, formatPercent, type Unit } from './prefs'
 import type { Mode } from './query-options'
 import { SCHEMES, UI, type ResolvedTheme, type Scheme } from './theme'
@@ -70,7 +71,7 @@ export async function renderShareImage(input: ShareInput): Promise<Blob> {
   const logo = new Image()
   logo.src = `/logo-${theme}.png`
   const [streets, hoods] = await Promise.all([
-    fetch(`/data/${city}/streets.geojson`).then((r) => r.json() as Promise<{ features: LineFeature[] }>),
+    loadStreets(city) as Promise<{ features: LineFeature[] }>,
     fetch(`/data/${city}/neighborhoods.geojson`).then((r) => r.json() as Promise<{ features: AreaFeature[] }>),
     logo.decode(),
     document.fonts?.ready,

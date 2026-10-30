@@ -4,7 +4,7 @@ import { Download, Loader2, Share, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CityId } from '../lib/cities'
 import { savePref, type Prefs } from '../lib/prefs'
-import { coverageQuery, meQuery, neighborhoodsQuery, streetsQuery, syncStatusQuery, type Mode } from '../lib/query-options'
+import { coverageQuery, meQuery, neighborhoodsQuery, streetsQuery, type Mode } from '../lib/query-options'
 import { renderShareImage, shareFileName, type ShareLayout, type ShareRankings } from '../lib/share-image'
 import type { ResolvedTheme } from '../lib/theme'
 import { Segmented } from './Segmented'
@@ -76,12 +76,11 @@ function ShareSheet({
     savePref(key, value)
     void router.invalidate()
   }
-  const coverage = useSuspenseQuery(coverageQuery(mode))
-  const hoods = useSuspenseQuery(neighborhoodsQuery(mode))
-  const { data: status } = useQuery(syncStatusQuery())
-  const activities = status?.activities[mode]
+  const coverage = useSuspenseQuery(coverageQuery(city, mode))
+  const hoods = useSuspenseQuery(neighborhoodsQuery(city, mode))
+  const activities = coverage.data.activities
   // Most-visited streets: first page of the ranking sorted by activities.
-  const streets = useInfiniteQuery(streetsQuery(mode, '', 'activities'))
+  const streets = useInfiniteQuery(streetsQuery(city, mode, '', 'activities'))
   const topStreets = streets.data?.pages[0]?.rows.slice(0, 6)
 
   useEffect(() => {

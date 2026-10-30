@@ -54,11 +54,16 @@ how you tested it, and anything a reviewer should know.
 
 ## Rebuilding the street network
 
-Run `pnpm streets && pnpm db:setup`, then restart `pnpm dev`. Stored activities are matched again
-against the new streets on the next sync, without new Strava requests.
+Run `pnpm streets <city> && pnpm seed <city>`, then restart `pnpm dev`. Stored activities in that
+city are matched again on the next sync, without new Strava requests.
 
 ## Adding a city
 
-Add an entry to `src/lib/cities.ts`, run `pnpm streets <id>`, add the generated
-`src/lib/totals.<id>.json` to `TOTALS` in `src/server/queries.ts`, and load
-`db/seed/<id>-segments.sql`.
+1. Add an entry to `CITIES` in `src/lib/cities.ts`. Give it the next free `idBase` (a multiple of
+   10,000,000) so its segment ids don't collide with another city's, and its official
+   neighborhood boundaries and their credit.
+2. Run `pnpm streets <city>`. It writes the map data (split into parts under Cloudflare's file size
+   limit), the seed, the totals and the neighborhood bounds. `pnpm test` checks they agree.
+3. Run `pnpm seed <city>` locally. Before the pull request is merged, load the seed into production
+   with `pnpm seed <city> --remote`. The next sync then credits existing activities in the city,
+   including ones it skipped before the city existed.

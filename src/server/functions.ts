@@ -2,7 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { getRequest, setCookie } from '@tanstack/react-start/server'
 import { env } from 'cloudflare:workers'
 import { z } from 'zod'
-import { DEFAULT_CITY } from '../lib/cities'
+import { CITY_IDS } from '../lib/cities'
 import {
   currentUser,
   requireUser,
@@ -26,6 +26,7 @@ import { authorizeUrl, stravaConfigured } from './strava/client'
 import { runSync } from './sync'
 
 const mode = z.enum(['foot', 'bike'])
+const city = z.enum(CITY_IDS)
 const userId = async () => (await currentUser(env.DB))?.id ?? null
 
 // ── Account ──────────────────────────────────────────────────────────────────
@@ -120,16 +121,17 @@ export const startStravaConnect = createServerFn({ method: 'POST' }).handler(asy
 // ── Progress ─────────────────────────────────────────────────────────────────
 
 export const getCoverage = createServerFn({ method: 'GET' })
-  .validator(z.object({ mode }))
-  .handler(async ({ data }) => getCoverageData(env.DB, DEFAULT_CITY, data.mode, await userId()))
+  .validator(z.object({ city, mode }))
+  .handler(async ({ data }) => getCoverageData(env.DB, data.city, data.mode, await userId()))
 
 export const getNeighborhoods = createServerFn({ method: 'GET' })
-  .validator(z.object({ mode }))
-  .handler(async ({ data }) => getNeighborhoodData(env.DB, DEFAULT_CITY, data.mode, await userId()))
+  .validator(z.object({ city, mode }))
+  .handler(async ({ data }) => getNeighborhoodData(env.DB, data.city, data.mode, await userId()))
 
 export const getStreets = createServerFn({ method: 'GET' })
   .validator(
     z.object({
+      city,
       mode,
       q: z.string().max(80).default(''),
       offset: z.number().int().min(0).default(0),
@@ -137,14 +139,14 @@ export const getStreets = createServerFn({ method: 'GET' })
       sort: z.enum(['progress', 'activities']).default('progress'),
     }),
   )
-  .handler(async ({ data }) => getStreetPage(env.DB, DEFAULT_CITY, data.mode, await userId(), data))
+  .handler(async ({ data }) => getStreetPage(env.DB, data.city, data.mode, await userId(), data))
 
 export const getStreet = createServerFn({ method: 'GET' })
-  .validator(z.object({ mode, name: z.string().max(200).optional(), segmentId: z.number().int().optional() }))
+  .validator(z.object({ city, mode, name: z.string().max(200).optional(), segmentId: z.number().int().optional() }))
   .handler(async ({ data }) =>
     getStreetDetail(
       env.DB,
-      DEFAULT_CITY,
+      data.city,
       data.mode,
       await userId(),
       data.name !== undefined ? { name: data.name } : { segmentId: data.segmentId ?? -1 },
@@ -152,8 +154,8 @@ export const getStreet = createServerFn({ method: 'GET' })
   )
 
 export const getLeaderboardFn = createServerFn({ method: 'GET' })
-  .validator(z.object({ mode }))
-  .handler(async ({ data }) => getLeaderboard(env.DB, DEFAULT_CITY, data.mode, await userId()))
+  .validator(z.object({ city, mode }))
+  .handler(async ({ data }) => getLeaderboard(env.DB, data.city, data.mode, await userId()))
 
 export const getStandings = createServerFn({ method: 'GET' })
   .validator(z.object({ mode }))

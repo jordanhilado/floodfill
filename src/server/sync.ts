@@ -1,5 +1,4 @@
-import { CITIES, DEFAULT_CITY, type CityId } from '../lib/cities'
-import { bboxIntersects, bboxOf } from '../lib/geo'
+import { CITIES, CITY_IDS, cityForTrack, type CityId } from '../lib/cities'
 import { decodePolyline, encodePolyline } from '../lib/polyline'
 import { applyActivityCoverage, type Mode } from './coverage/apply'
 import { matchTrack } from './coverage/match'
@@ -42,7 +41,7 @@ export type SyncResult = {
  */
 export async function runSync(
   env: Env,
-  opts: { trigger: 'manual' | 'cron'; timeBudgetMs: number; userId?: string; city?: CityId },
+  opts: { trigger: 'manual' | 'cron'; timeBudgetMs: number; userId?: string },
 ): Promise<SyncResult> {
   const result: SyncResult = { stopReason: 'complete', resumeAt: null, requests: 0, listed: 0, detailed: 0, rematched: 0, error: null }
   if (!stravaConfigured(env)) return { ...result, stopReason: 'not_configured' }
@@ -72,17 +71,15 @@ export async function runSync(
     .first<{ id: number }>()
 
   const limiter = await RateLimiter.load(db, env)
-  const city = opts.city ?? DEFAULT_CITY
-  const index = await loadCityIndex(db, city)
   const outOfTime = () => Date.now() > deadline
 
   try {
-    // 0. After the street network is rebuilt, re-match stored tracks. No API requests.
-    result.rematched = await rematch(db, index, outOfTime)
+    // 0. After a city's street network is rebuilt or added, re-match stored tracks. No API requests.
+    result.rematched = await rematch(db, outOfTime)
 
     for (const account of accounts.results) {
       if (outOfTime()) break
-      await syncAccount(db, env, limiter, index, city, account, outOfTime, result)
+      await syncAccount(db, env, limiter, account, outOfTime, result)
     }
     if (outOfTime()) result.stopReason = 'time'
   } catch (err) {
@@ -112,8 +109,6 @@ async function syncAccount(
   db: D1Database,
   env: Env,
   limiter: RateLimiter,
-  index: CityIndex,
-  city: CityId,
   account: StravaAccount,
   outOfTime: () => boolean,
   result: SyncResult,
@@ -130,7 +125,7 @@ async function syncAccount(
   if (newest?.ts) {
     for (let page = 1; !outOfTime(); page++) {
       const acts = await client.listActivities({ after: newest.ts, page })
-      result.listed += await ingest(db, index, city, userId, acts)
+      result.listed += await ingest(db, userId, acts)
       if (acts.length < PER_PAGE) break
     }
   }
@@ -139,7 +134,7 @@ async function syncAccount(
   let { backfill_before: before, backfill_done: done } = account
   while (!done && !outOfTime()) {
     const acts = await client.listActivities(before ? { before } : {})
-    result.listed += await ingest(db, index, city, userId, acts)
+    result.listed += await ingest(db, userId, acts)
     if (acts.length > 0) before = Math.min(...acts.map((a) => toTs(a.start_date)))
     if (acts.length < PER_PAGE) done = 1
     await db
@@ -151,56 +146,145 @@ async function syncAccount(
   // 3. Upgrade summary matches with full-resolution GPS streams, newest first.
   while (!outOfTime()) {
     const { results: pending } = await db
-      .prepare(`SELECT id, mode FROM activities WHERE user_id = ? AND status = 'summary' ORDER BY start_ts DESC LIMIT 25`)
+      .prepare(`SELECT id, mode, city FROM activities WHERE user_id = ? AND status = 'summary' ORDER BY start_ts DESC LIMIT 25`)
       .bind(userId)
-      .all<{ id: number; mode: Mode }>()
+      .all<{ id: number; mode: Mode; city: string | null }>()
     if (pending.length === 0) break
-    for (const act of pending) {
+    for (const [city, acts] of byCity(pending)) {
       if (outOfTime()) break
-      let track: [number, number][] | null = null
-      try {
-        track = await client.latlngStream(act.id)
-      } catch (err) {
-        if (!(err instanceof StravaError) || ![403, 404].includes(err.status)) throw err
-      }
-      if (!track || track.length < 2) {
-        await setActivityStatus(db, act.id, 'error')
+      if (!city) {
+        // Its city is no longer enabled.
+        for (const act of acts) await setActivityStatus(db, act.id, 'ignored')
         continue
       }
-      const masks = matchTrack(track, index.forMode[act.mode], index.project, STREAM_MAX_GAP_M)
-      const firsts = await applyActivityCoverage(db, index, userId, act.id, act.mode, masks)
-      await db
-        .prepare(`UPDATE activities SET status = 'detailed', polyline = ?, new_segments = ?, updated_at = ? WHERE id = ?`)
-        .bind(encodePolyline(track), firsts, Date.now(), act.id)
-        .run()
-      result.detailed++
+      const index = await loadCityIndex(db, city)
+      for (const act of acts) {
+        if (outOfTime()) break
+        let track: [number, number][] | null = null
+        try {
+          track = await client.latlngStream(act.id)
+        } catch (err) {
+          if (!(err instanceof StravaError) || ![403, 404].includes(err.status)) throw err
+        }
+        if (!track || track.length < 2) {
+          await setActivityStatus(db, act.id, 'error')
+          continue
+        }
+        const masks = matchTrack(track, index.forMode[act.mode], index.project, STREAM_MAX_GAP_M)
+        const firsts = await applyActivityCoverage(db, index, userId, act.id, act.mode, masks)
+        await db
+          .prepare(`UPDATE activities SET status = 'detailed', polyline = ?, new_segments = ?, updated_at = ? WHERE id = ?`)
+          .bind(encodePolyline(track), firsts, Date.now(), act.id)
+          .run()
+        result.detailed++
+      }
     }
   }
   await touch()
 }
 
-type RematchCursor = { ts: number; id: number }
+/**
+ * Groups activities by city, keeping their order within each, so each city's index is loaded
+ * once. Activities whose city isn't enabled come under null.
+ */
+function byCity<T extends { city: string | null }>(acts: T[]): Map<CityId | null, T[]> {
+  const groups = new Map<CityId | null, T[]>()
+  for (const a of acts) {
+    const city = a.city !== null && Object.hasOwn(CITIES, a.city) ? (a.city as CityId) : null
+    const group = groups.get(city)
+    if (group) group.push(a)
+    else groups.set(city, [a])
+  }
+  return groups
+}
 
 /**
- * Re-credits every counted activity against the current network, oldest first so each
- * segment's completing activity comes out right. Resumable via the `rematch` cursor,
- * which the street seed sets and this clears once everything has been re-matched.
+ * Re-match progress for one city. `classify` first assigns ignored activities that fall in the
+ * city (it may be new), then `match` re-credits the city's activities.
  */
-async function rematch(db: D1Database, index: CityIndex, outOfTime: () => boolean) {
-  const cursor = await getState<RematchCursor>(db, 'rematch')
-  if (!cursor) return 0
+type RematchCursor = { ts: number; id: number; phase?: 'classify' | 'match' }
+
+/**
+ * Re-credits each flagged city's activities against its current network, oldest first so each
+ * segment's completing activity comes out right. A city's seed sets `rematch:<city>`, and this
+ * clears it once the city is done. The older `rematch` key means every city.
+ */
+async function rematch(db: D1Database, outOfTime: () => boolean) {
+  const { results: keys } = await db
+    .prepare(`SELECT key FROM state WHERE key = 'rematch' OR key LIKE 'rematch:%'`)
+    .all<{ key: string }>()
+  if (keys.length === 0) return 0
+  if (keys.some((k) => k.key === 'rematch')) {
+    await db.batch([
+      ...CITY_IDS.map((city) =>
+        db
+          .prepare(`INSERT INTO state (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING`)
+          .bind(`rematch:${city}`, JSON.stringify({ ts: 0, id: 0 }), Date.now()),
+      ),
+      db.prepare(`DELETE FROM state WHERE key = 'rematch'`),
+    ])
+    return rematch(db, outOfTime)
+  }
+
   let done = 0
+  for (const { key } of keys) {
+    if (outOfTime()) break
+    const city = key.slice('rematch:'.length)
+    if (!Object.hasOwn(CITIES, city)) {
+      await db.prepare('DELETE FROM state WHERE key = ?').bind(key).run()
+      continue
+    }
+    done += await rematchCity(db, city as CityId, key, outOfTime)
+  }
+  return done
+}
+
+async function rematchCity(db: D1Database, city: CityId, key: string, outOfTime: () => boolean) {
+  const cursor = (await getState<RematchCursor>(db, key)) ?? { ts: 0, id: 0 }
+
+  if ((cursor.phase ?? 'classify') === 'classify') {
+    while (!outOfTime()) {
+      const { results } = await db
+        .prepare(
+          `SELECT id, start_ts, summary_polyline FROM activities
+           WHERE status = 'ignored' AND mode IS NOT NULL AND user_id IS NOT NULL AND summary_polyline IS NOT NULL
+             AND (start_ts > ? OR (start_ts = ? AND id > ?))
+           ORDER BY start_ts, id LIMIT 200`,
+        )
+        .bind(cursor.ts, cursor.ts, cursor.id)
+        .all<{ id: number; start_ts: number; summary_polyline: string }>()
+      const found = results.filter((a) => cityForTrack(decodePolyline(a.summary_polyline)) === city)
+      for (const ids of chunk(found.map((a) => a.id), MAX_PARAMS - 3)) {
+        await db
+          .prepare(`UPDATE activities SET city = ?, status = 'summary', updated_at = ? WHERE id IN (${ids.map(() => '?').join(',')})`)
+          .bind(city, Date.now(), ...ids)
+          .run()
+      }
+      if (results.length === 0) {
+        Object.assign(cursor, { ts: 0, id: 0, phase: 'match' })
+        await setState(db, key, cursor)
+        break
+      }
+      const last = results[results.length - 1]
+      Object.assign(cursor, { ts: last.start_ts, id: last.id })
+      await setState(db, key, cursor)
+    }
+    if (cursor.phase !== 'match') return 0
+  }
+
+  let done = 0
+  const index = await loadCityIndex(db, city)
   while (!outOfTime()) {
     const { results } = await db
       .prepare(
         `SELECT id, user_id, mode, start_ts, polyline, summary_polyline FROM activities
-         WHERE status != 'ignored' AND user_id IS NOT NULL AND (start_ts > ? OR (start_ts = ? AND id > ?))
+         WHERE city = ? AND status != 'ignored' AND user_id IS NOT NULL AND (start_ts > ? OR (start_ts = ? AND id > ?))
          ORDER BY start_ts, id LIMIT 20`,
       )
-      .bind(cursor.ts, cursor.ts, cursor.id)
+      .bind(city, cursor.ts, cursor.ts, cursor.id)
       .all<ActivityTrack & { start_ts: number }>()
     if (results.length === 0) {
-      await db.prepare(`DELETE FROM state WHERE key = 'rematch'`).run()
+      await db.prepare('DELETE FROM state WHERE key = ?').bind(key).run()
       break
     }
     for (const a of results) {
@@ -209,7 +293,7 @@ async function rematch(db: D1Database, index: CityIndex, outOfTime: () => boolea
       cursor.id = a.id
       done++
     }
-    await setState(db, 'rematch', cursor)
+    await setState(db, key, cursor)
   }
   return done
 }
@@ -235,7 +319,7 @@ function setActivityStatus(db: D1Database, id: number, status: string) {
  * Stores new activities and immediately credits coverage from their summary polyline,
  * which costs no extra API requests. Returns the number of new activities.
  */
-async function ingest(db: D1Database, index: CityIndex, city: CityId, userId: string, acts: StravaSummaryActivity[]) {
+async function ingest(db: D1Database, userId: string, acts: StravaSummaryActivity[]) {
   const known = new Set<number>()
   for (const ids of chunk(acts.map((a) => a.id), MAX_PARAMS - 1)) {
     const marks = ids.map(() => '?').join(',')
@@ -243,12 +327,16 @@ async function ingest(db: D1Database, index: CityIndex, city: CityId, userId: st
     const { results: claimed } = await db
       .prepare(
         `UPDATE activities SET user_id = ? WHERE user_id IS NULL AND id IN (${marks})
-         RETURNING id, user_id, mode, status, polyline, summary_polyline`,
+         RETURNING id, user_id, mode, city, status, polyline, summary_polyline`,
       )
       .bind(userId, ...ids)
-      .all<ActivityTrack & { status: string }>()
+      .all<ActivityTrack & { city: string | null; status: string }>()
     try {
-      for (const a of claimed) if (a.status !== 'ignored' && a.mode) await recredit(db, index, a)
+      for (const [city, group] of byCity(claimed.filter((a) => a.status !== 'ignored' && a.mode))) {
+        if (!city) continue
+        const index = await loadCityIndex(db, city)
+        for (const a of group) await recredit(db, index, a)
+      }
     } catch (err) {
       // These rows are already claimed and won't be listed as new again, so make sure the
       // next sync re-credits every stored track (no Strava requests) before giving up.
@@ -263,15 +351,14 @@ async function ingest(db: D1Database, index: CityIndex, city: CityId, userId: st
     for (const r of results) known.add(r.id)
   }
 
-  const [[minLng, minLat], [maxLng, maxLat]] = CITIES[city].bounds
-  const cityBox = { minLat, minLng, maxLat, maxLng }
   let added = 0
+  const toMatch: { id: number; city: CityId; mode: Mode; track: [number, number][] }[] = []
   for (const a of acts) {
     if (known.has(a.id)) continue
     const mode = modeFor(a.sport_type)
     const summary = a.map?.summary_polyline || null
     const track = mode && summary ? decodePolyline(summary) : []
-    const relevant = track.length >= 2 && bboxIntersects(bboxOf(track), cityBox)
+    const city = track.length >= 2 ? cityForTrack(track) : null
     await db
       .prepare(
         `INSERT INTO activities (id, user_id, name, sport_type, mode, start_date, start_ts, distance_m, moving_time_s, city, summary_polyline, status, updated_at)
@@ -287,16 +374,21 @@ async function ingest(db: D1Database, index: CityIndex, city: CityId, userId: st
         toTs(a.start_date),
         a.distance,
         a.moving_time,
-        relevant ? city : null,
+        city,
         summary,
-        relevant ? 'summary' : 'ignored',
+        city ? 'summary' : 'ignored',
         Date.now(),
       )
       .run()
     added++
-    if (relevant && mode) {
-      const masks = matchTrack(track, index.forMode[mode], index.project, SUMMARY_MAX_GAP_M)
-      const firsts = await applyActivityCoverage(db, index, userId, a.id, mode, masks)
+    if (city && mode) toMatch.push({ id: a.id, city, mode, track })
+  }
+
+  for (const [city, group] of byCity(toMatch)) {
+    const index = await loadCityIndex(db, city!)
+    for (const a of group) {
+      const masks = matchTrack(a.track, index.forMode[a.mode], index.project, SUMMARY_MAX_GAP_M)
+      const firsts = await applyActivityCoverage(db, index, userId, a.id, a.mode, masks)
       await db.prepare('UPDATE activities SET new_segments = ? WHERE id = ?').bind(firsts, a.id).run()
     }
   }

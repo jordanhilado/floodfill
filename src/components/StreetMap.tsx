@@ -7,6 +7,7 @@ import { CITIES, type CityId } from '../lib/cities'
 import { NEIGHBORHOODS } from '../lib/neighborhoods'
 import { formatPercent } from '../lib/prefs'
 import type { Mode } from '../lib/query-options'
+import { loadStreets, type StreetCollection } from '../lib/street-index'
 import { MAP_THEME, SCHEMES, type ResolvedTheme, type Scheme } from '../lib/theme'
 
 maplibregl.setWorkerUrl(workerUrl)
@@ -88,7 +89,7 @@ class CenterControl implements maplibregl.IControl {
 type Look = { theme: ResolvedTheme; scheme: Scheme }
 
 /** Adds the street and neighborhood layers. Runs on every style load, since a basemap swap drops them. */
-function install(map: MapLibreMap, city: CityId, { theme, scheme }: Look) {
+function install(map: MapLibreMap, city: CityId, streets: StreetCollection, { theme, scheme }: Look) {
   const c = SCHEMES[scheme][theme]
   const t = MAP_THEME[theme]
   // Streets go above every basemap road but under the labels that follow them, so names
@@ -96,7 +97,7 @@ function install(map: MapLibreMap, city: CityId, { theme, scheme }: Look) {
   const layers = map.getStyle().layers
   const lastLine = layers.map((l) => l.type).lastIndexOf('line')
   const firstSymbol = layers.slice(lastLine + 1).find((l) => l.type === 'symbol')?.id
-  map.addSource(SOURCE, { type: 'geojson', data: `/data/${city}/streets.geojson` })
+  map.addSource(SOURCE, { type: 'geojson', data: streets })
   const line = (id: string, paint: maplibregl.LineLayerSpecification['paint']) =>
     map.addLayer(
       { id, type: 'line', source: SOURCE, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint },
@@ -255,6 +256,7 @@ export default function StreetMap({
 
   useEffect(() => {
     const c = CITIES[city]
+    framed.current = undefined
     const map = new maplibregl.Map({
       container: container.current!,
       style: MAP_THEME[themeRef.current].style,
@@ -283,14 +285,20 @@ export default function StreetMap({
       if (window.innerWidth < 640) container.current?.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show')
     })
 
+    // Counts style loads, so streets that arrive after another basemap swap skip the stale style.
+    let styleLoads = 0
     map.on('style.load', () => {
-      install(map, city, lookRef.current)
-      setStyleVersion((v) => v + 1)
-      map.on('sourcedata', function onData(e) {
-        if (e.sourceId === SOURCE && map.isSourceLoaded(SOURCE)) {
-          map.off('sourcedata', onData)
-          setDataVersion((v) => v + 1)
-        }
+      const load = ++styleLoads
+      void loadStreets(city).then((streets) => {
+        if (mapRef.current !== map || load !== styleLoads) return
+        install(map, city, streets, lookRef.current)
+        setStyleVersion((v) => v + 1)
+        map.on('sourcedata', function onData(e) {
+          if (e.sourceId === SOURCE && map.isSourceLoaded(SOURCE)) {
+            map.off('sourcedata', onData)
+            setDataVersion((v) => v + 1)
+          }
+        })
       })
     })
 
