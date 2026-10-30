@@ -43,6 +43,8 @@ describe('rematch after a city is added', async () => {
   insert.run(1, 'foot', 100, market) // in a city that has since been enabled
   insert.run(2, 'foot', 200, lakefront) // outside every enabled city
   insert.run(3, null, 300, market) // not a foot or bike activity
+  // Seeded in production ahead of the deploy that enables it.
+  db.prepare(`INSERT INTO state (key, value, updated_at) VALUES ('rematch:atlantis', '{"ts":0,"id":0}', 0)`).run()
   const env = {
     DB: d1(db),
     STRAVA_CLIENT_ID: 'id',
@@ -57,10 +59,10 @@ describe('rematch after a city is added', async () => {
   const result = await runSync(env, { trigger: 'cron', timeBudgetMs: 60_000 })
   const activity = (id: number) => db.prepare('SELECT city, status FROM activities WHERE id = ?').get(id)
 
-  it('finishes and clears every rematch flag', () => {
+  it('finishes and clears the flags of enabled cities', () => {
     expect(result.error).toBeNull()
     expect(result.rematched).toBe(1)
-    expect(db.prepare(`SELECT key FROM state WHERE key LIKE 'rematch%'`).all()).toEqual([])
+    expect(db.prepare(`SELECT key FROM state WHERE key LIKE 'rematch%'`).all()).toEqual([{ key: 'rematch:atlantis' }])
   })
 
   it('assigns ignored activities to the city they fall in and credits them', () => {
