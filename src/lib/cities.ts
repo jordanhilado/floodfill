@@ -1,6 +1,6 @@
 import { OSM_STREETS, type Credit } from './credits.ts'
 
-export type CityId = 'sf'
+export type CityId = 'sf' | 'seattle'
 
 export type City = {
   id: CityId
@@ -51,6 +51,33 @@ export const CITIES: Record<CityId, City> = {
         what: 'Neighborhood boundaries',
         source: 'DataSF, Analysis Neighborhoods',
         url: 'https://data.sf.gov/d/p5b7-5n3h',
+        license: { name: 'PDDL', url: 'https://opendatacommons.org/licenses/pddl/1-0/' },
+      },
+    ],
+  },
+  seattle: {
+    id: 'seattle',
+    name: 'Seattle',
+    state: 'WA',
+    osmRelationId: 237385,
+    center: [-122.335, 47.6076],
+    zoom: 11.3,
+    bounds: [
+      [-122.4597, 47.481],
+      [-122.2244, 47.7342],
+    ],
+    idBase: 30_000_000,
+    neighborhoods: {
+      source: 'City of Seattle Neighborhood Map Atlas',
+      url: 'https://services.arcgis.com/ZOyb2t4B0UYuYNYH/arcgis/rest/services/nma_nhoods_sub/FeatureServer/0/query?where=1%3D1&outFields=S_HOOD&outSR=4326&f=geojson',
+      nameKey: 'S_HOOD',
+    },
+    credits: [
+      OSM_STREETS,
+      {
+        what: 'Neighborhood boundaries',
+        source: 'City of Seattle, Neighborhood Map Atlas',
+        url: 'https://data-seattlecitygis.opendata.arcgis.com/datasets/b4a142f592e94d39a3bf787f3c112c1d',
         license: { name: 'PDDL', url: 'https://opendatacommons.org/licenses/pddl/1-0/' },
       },
     ],
