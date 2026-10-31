@@ -29,3 +29,9 @@ export const MAP_CREDITS: Credit[] = [
 ]
 
 export const ACTIVITY_CREDITS: Credit[] = [{ what: 'Activities', source: 'Powered by Strava', url: 'https://www.strava.com' }]
+
+/** Who made Floodfill, and where to reach them. */
+export const AUTHOR_CREDITS: Credit[] = [
+  { what: 'Built by', source: 'Jordan Hilado', url: 'https://jordanhilado.com' },
+  { what: 'Questions & feedback', source: 'hello@jordanhilado.com', url: 'mailto:hello@jordanhilado.com' },
+]

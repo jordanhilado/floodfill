@@ -1,5 +1,5 @@
 import { CITIES, type CityId } from '../lib/cities'
-import { ACTIVITY_CREDITS, MAP_CREDITS, type Credit } from '../lib/credits'
+import { ACTIVITY_CREDITS, AUTHOR_CREDITS, MAP_CREDITS, type Credit } from '../lib/credits'
 import { MATCH } from '../server/coverage/match'
 import { Modal } from './Modal'
 
@@ -9,6 +9,7 @@ export function InfoDialog({ open, onClose, city }: { open: boolean; onClose: ()
     [CITIES[city].name, CITIES[city].credits],
     ['Map', MAP_CREDITS],
     ['Activities', ACTIVITY_CREDITS],
+    ['Author', AUTHOR_CREDITS],
   ]
 
   return (
