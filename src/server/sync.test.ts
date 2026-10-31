@@ -158,7 +158,7 @@ describe('importing a Strava export', async () => {
   })
 })
 
-describe('an imported activity under someone else's Strava id', async () => {
+describe("an imported activity under someone else's Strava id", async () => {
   const db = await seededDatabase('sf')
   const rows = db.prepare(`SELECT coords FROM segments WHERE city = 'sf' AND name = 'Market Street' AND foot = 1 ORDER BY id LIMIT 8`).all() as {
     coords: string
