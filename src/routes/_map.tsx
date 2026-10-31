@@ -62,7 +62,7 @@ export const Route = createFileRoute('/_map')({
     const { name } = CITIES[city]
     return {
       meta: [
-        { title: `floodfill.world · ${name} street coverage` },
+        { title: 'floodfill.world' },
         { name: 'description', content: `How much of ${name} you have covered, from your Strava activities.` },
       ],
       // Start the street network download before the map bundle loads.

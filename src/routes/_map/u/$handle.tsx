@@ -13,7 +13,6 @@ export const Route = createFileRoute('/_map/u/$handle')({
     }
   },
   loader: ({ context, params }) => context.queryClient.ensureQueryData(profileQuery(username(params.handle))),
-  head: ({ params }) => ({ meta: [{ title: `${params.handle} · floodfill.world` }] }),
   component: ProfileRoute,
 })
 
