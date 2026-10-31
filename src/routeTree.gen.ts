@@ -13,6 +13,7 @@ import { Route as MapRouteImport } from './routes/_map'
 import { Route as MapIndexRouteImport } from './routes/_map/index'
 import { Route as MapUHandleRouteImport } from './routes/_map/u/$handle'
 import { Route as ApiStravaCallbackRouteImport } from './routes/api/strava/callback'
+import { Route as ApiStravaWebhookRouteImport } from './routes/api/strava/webhook'
 
 const MapRoute = MapRouteImport.update({
   id: '/_map',
@@ -33,16 +34,23 @@ const ApiStravaCallbackRoute = ApiStravaCallbackRouteImport.update({
   path: '/api/strava/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiStravaWebhookRoute = ApiStravaWebhookRouteImport.update({
+  id: '/api/strava/webhook',
+  path: '/api/strava/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof MapIndexRoute
   '/u/$handle': typeof MapUHandleRoute
   '/api/strava/callback': typeof ApiStravaCallbackRoute
+  '/api/strava/webhook': typeof ApiStravaWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof MapIndexRoute
   '/u/$handle': typeof MapUHandleRoute
   '/api/strava/callback': typeof ApiStravaCallbackRoute
+  '/api/strava/webhook': typeof ApiStravaWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -50,19 +58,26 @@ export interface FileRoutesById {
   '/_map/': typeof MapIndexRoute
   '/_map/u/$handle': typeof MapUHandleRoute
   '/api/strava/callback': typeof ApiStravaCallbackRoute
+  '/api/strava/webhook': typeof ApiStravaWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/u/$handle' | '/api/strava/callback'
+  fullPaths: '/' | '/u/$handle' | '/api/strava/callback' | '/api/strava/webhook'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/u/$handle' | '/api/strava/callback'
+  to: '/' | '/u/$handle' | '/api/strava/callback' | '/api/strava/webhook'
   id:
-    '__root__' | '/_map' | '/_map/' | '/_map/u/$handle' | '/api/strava/callback'
+    | '__root__'
+    | '/_map'
+    | '/_map/'
+    | '/_map/u/$handle'
+    | '/api/strava/callback'
+    | '/api/strava/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   MapRoute: typeof MapRouteWithChildren
   ApiStravaCallbackRoute: typeof ApiStravaCallbackRoute
+  ApiStravaWebhookRoute: typeof ApiStravaWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -95,6 +110,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiStravaCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/strava/webhook': {
+      id: '/api/strava/webhook'
+      path: '/api/strava/webhook'
+      fullPath: '/api/strava/webhook'
+      preLoaderRoute: typeof ApiStravaWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -113,6 +135,7 @@ const MapRouteWithChildren = MapRoute._addFileChildren(MapRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   MapRoute: MapRouteWithChildren,
   ApiStravaCallbackRoute: ApiStravaCallbackRoute,
+  ApiStravaWebhookRoute: ApiStravaWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -16,6 +16,7 @@ interface __BaseEnv_Env {
 	STRAVA_CLIENT_SECRET: string;
 	STRAVA_REFRESH_TOKEN: string;
 	AUTH_SECRET: string;
+	STRAVA_WEBHOOK_TOKEN?: string;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {

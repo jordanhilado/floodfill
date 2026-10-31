@@ -35,6 +35,9 @@ export class StravaError extends Error {
   }
 }
 
+/** The athlete revoked access (or the tokens are otherwise dead): only reconnecting fixes it. */
+export class StravaAuthError extends StravaError {}
+
 /** The app's Strava API credentials (each user connects their own account through OAuth). */
 export function stravaConfigured(env: Env) {
   return Boolean(env.STRAVA_CLIENT_ID && env.STRAVA_CLIENT_SECRET)
@@ -95,7 +98,10 @@ export class StravaClient {
   /** Access tokens last 6 hours; Strava may rotate the refresh token, so both are saved back. */
   private async accessToken(force = false) {
     if (!force && this.account.expires_at * 1000 > Date.now() + 5 * 60 * 1000) return this.account.access_token
-    const t = await tokenRequest(this.env, { grant_type: 'refresh_token', refresh_token: this.account.refresh_token })
+    const t = await tokenRequest(this.env, { grant_type: 'refresh_token', refresh_token: this.account.refresh_token }).catch((err) => {
+      // A refused refresh token means the athlete revoked access; server errors are worth retrying.
+      throw err instanceof StravaError && (err.status === 400 || err.status === 401) ? new StravaAuthError(err.status, err.message) : err
+    })
     this.account = { ...this.account, access_token: t.access_token, refresh_token: t.refresh_token, expires_at: t.expires_at }
     await this.db
       .prepare('UPDATE strava_accounts SET access_token = ?, refresh_token = ?, expires_at = ? WHERE user_id = ?')
@@ -123,11 +129,22 @@ export class StravaClient {
       }
       return (await res.json()) as T
     }
-    throw new StravaError(401, `GET ${path} → unauthorized`)
+    throw new StravaAuthError(401, `GET ${path} → unauthorized`)
   }
 
   listActivities(params: { before?: number; after?: number; page?: number; per_page?: number }) {
     return this.get<StravaSummaryActivity[]>('/athlete/activities', { per_page: 200, ...params })
+  }
+
+  /** Whether Strava still has this activity, asked as its owner. */
+  async activityExists(id: number) {
+    try {
+      await this.get(`/activities/${id}`)
+      return true
+    } catch (err) {
+      if (err instanceof StravaError && err.status === 404) return false
+      throw err
+    }
   }
 
   async latlngStream(id: number): Promise<[number, number][] | null> {

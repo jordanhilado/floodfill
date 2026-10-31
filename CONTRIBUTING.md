@@ -69,3 +69,26 @@ requests.
    with `pnpm seed <city> --remote`. Once the pull request is deployed, the first visit to the map
    (or the next cron sync) credits everyone's existing activities in the city, including ones
    skipped before the city existed.
+
+## Strava webhooks
+
+Without webhooks, the cron lists every connected athlete's activities every 15 minutes. Strava's
+default read limit (2,000 requests a day) only covers a few dozen athletes on that schedule. With
+webhooks, Strava tells the app who has a new, changed or deleted activity. The cron then syncs
+only those athletes, plus anyone still importing their history, plus a weekly check of everyone
+else.
+
+To turn them on in production:
+
+1. Pick a random token and set it: `openssl rand -hex 16`, then `wrangler secret put STRAVA_WEBHOOK_TOKEN`.
+2. Deploy, so `/api/strava/webhook` answers Strava's check.
+3. Subscribe once for the Strava app. Strava allows one subscription per app:
+
+   ```sh
+   curl -X POST https://www.strava.com/api/v3/push_subscriptions \
+     -F client_id=$STRAVA_CLIENT_ID -F client_secret=$STRAVA_CLIENT_SECRET \
+     -F callback_url=https://floodfill.world/api/strava/webhook -F verify_token=$STRAVA_WEBHOOK_TOKEN
+   ```
+
+   To see or remove the subscription, send a `GET` or `DELETE` request to the same URL with `client_id` and
+   `client_secret`.

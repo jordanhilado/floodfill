@@ -14,6 +14,9 @@
 	"workers_dev": false,
 	"preview_urls": false,
 	"upload_source_maps": true,
+	// CPU time per invocation. Matching tracks is CPU-bound, and a cron run or a rematch after a
+	// city opens can match hundreds of activities: the 30 s default isn't enough as users grow.
+	"limits": { "cpu_ms": 300000 },
 	"d1_databases": [
 		{
 			"binding": "DB",
@@ -48,4 +51,5 @@
 	}
 	// Secrets (put in .dev.vars locally, `wrangler secret put` in production):
 	// STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, AUTH_SECRET
+	// Optional: STRAVA_WEBHOOK_TOKEN turns on Strava webhooks (routes/api/strava/webhook.ts).
 }

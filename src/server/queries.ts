@@ -289,35 +289,57 @@ export type LeaderboardRow = { rank: number; username: string; percent: number; 
 const LEADERBOARD_SIZE = 50
 
 /**
+ * Recomputes the totals of users whose coverage changed since they were last read. Usually there
+ * are none, and finding that out is one indexed read.
+ */
+export async function refreshUserStats(db: D1Database) {
+  if (!(await db.prepare('SELECT 1 AS x FROM user_stats WHERE stale = 1 LIMIT 1').first())) return
+  await db
+    .prepare(
+      `UPDATE user_stats SET
+         meters = COALESCE((
+           SELECT SUM(s.length_m) FROM coverage c CROSS JOIN segments s ON s.id = c.segment_id
+           WHERE c.user_id = user_stats.user_id AND c.mode = user_stats.mode AND c.completed = 1
+             AND s.city = user_stats.city AND (CASE user_stats.mode WHEN 'bike' THEN s.bike ELSE s.foot END) = 1
+         ), 0),
+         activities = (
+           SELECT COUNT(*) FROM activities a
+           WHERE a.user_id = user_stats.user_id AND a.mode = user_stats.mode AND a.city = user_stats.city AND a.status != 'ignored'
+         ),
+         stale = 0
+       WHERE stale = 1`,
+    )
+    .run()
+}
+
+/**
  * Everyone with a username and a connected Strava account or imported activities, ranked by the share of the city
  * done in this mode, then by activities. Returns the top of the board plus your own row.
  */
 export async function getLeaderboard(db: D1Database, city: CityId, mode: Mode, userId: string | null) {
+  await refreshUserStats(db)
+  return leaderboard(db, city, mode, userId)
+}
+
+/** The leaderboard from user_stats as it stands: call refreshUserStats first. */
+async function leaderboard(db: D1Database, city: CityId, mode: Mode, userId: string | null) {
   const totals = await totalsFor(city, mode)
+  // One row per player from user_stats; only the top of the board and your own row come back.
   const { results } = await db
     .prepare(
-      `WITH done AS (
-         SELECT c.user_id, SUM(s.length_m) AS m FROM coverage c JOIN segments s ON s.id = c.segment_id
-         WHERE c.mode = ?1 AND c.completed = 1 AND s.city = ?2 AND s.${mode} = 1
-         GROUP BY c.user_id
-       ),
-       acts AS (
-         SELECT user_id, COUNT(*) AS n FROM activities
-         WHERE mode = ?1 AND city = ?2 AND status != 'ignored' AND user_id IS NOT NULL
-         GROUP BY user_id
+      `WITH board AS (
+         SELECT u.id, u.username, COALESCE(st.meters, 0) AS m, COALESCE(st.activities, 0) AS n,
+                ROW_NUMBER() OVER (ORDER BY COALESCE(st.meters, 0) DESC, COALESCE(st.activities, 0) DESC, u.username) AS rank,
+                COUNT(*) OVER () AS players
+         FROM users u
+         LEFT JOIN user_stats st ON st.user_id = u.id AND st.city = ?2 AND st.mode = ?1
+         WHERE u.username IS NOT NULL
+           AND (EXISTS (SELECT 1 FROM strava_accounts sa WHERE sa.user_id = u.id)
+             OR EXISTS (SELECT 1 FROM activities a WHERE a.user_id = u.id))
        )
-       SELECT u.id, u.username, COALESCE(done.m, 0) AS m, COALESCE(acts.n, 0) AS n,
-              ROW_NUMBER() OVER (ORDER BY COALESCE(done.m, 0) DESC, COALESCE(acts.n, 0) DESC, u.username) AS rank,
-              COUNT(*) OVER () AS players
-       FROM users u
-       LEFT JOIN done ON done.user_id = u.id
-       LEFT JOIN acts ON acts.user_id = u.id
-       WHERE u.username IS NOT NULL
-         AND (EXISTS (SELECT 1 FROM strava_accounts sa WHERE sa.user_id = u.id)
-           OR EXISTS (SELECT 1 FROM activities a WHERE a.user_id = u.id))
-       ORDER BY rank`,
+       SELECT * FROM board WHERE rank <= ?3 OR id = ?4 ORDER BY rank`,
     )
-    .bind(mode, city)
+    .bind(mode, city, LEADERBOARD_SIZE, userId)
     .all<{ id: string; username: string; m: number; n: number; rank: number; players: number }>()
   const toRow = (r: (typeof results)[number]): LeaderboardRow => ({
     rank: r.rank,
@@ -331,7 +353,7 @@ export async function getLeaderboard(db: D1Database, city: CityId, mode: Mode, u
   return {
     city,
     players: results[0]?.players ?? 0,
-    rows: results.slice(0, LEADERBOARD_SIZE).map(toRow),
+    rows: results.filter((r) => r.rank <= LEADERBOARD_SIZE).map(toRow),
     /** Your row when you're below the top of the board. */
     you: me && me.rank > LEADERBOARD_SIZE ? toRow(me) : null,
   }
@@ -341,9 +363,10 @@ export type CityStanding = Awaited<ReturnType<typeof getPersonalStandings>>[numb
 
 /** Your standing in every city Floodfill covers, for one mode. */
 export async function getPersonalStandings(db: D1Database, mode: Mode, userId: string) {
+  await refreshUserStats(db)
   return Promise.all(
     CITY_IDS.map(async (city) => {
-      const [board, totals] = await Promise.all([getLeaderboard(db, city, mode, userId), totalsFor(city, mode)])
+      const [board, totals] = await Promise.all([leaderboard(db, city, mode, userId), totalsFor(city, mode)])
       const me = board.rows.find((r) => r.you) ?? board.you
       return {
         city,
