@@ -50,15 +50,15 @@ export function NavBar({
         onClick={() => setOpen('city')}
         aria-haspopup="dialog"
         aria-label={`City: ${CITIES[city].name}, ${CITIES[city].state}. Change city`}
-        className="-ml-1 flex h-8 min-w-0 items-center gap-1 rounded-[8px] px-1 text-13 text-ink-2 transition-colors hover:bg-fill-strong hover:text-ink"
+        // Takes the room up to the icons, so the whole stretch picks a city.
+        className="-ml-1 flex h-8 min-w-0 flex-1 items-center gap-1 rounded-[8px] px-1.5 text-13 text-ink-2 transition-colors hover:bg-fill-strong hover:text-ink"
       >
-        {/* Desktop shows the domain beside it, so it drops the pin to fit "San Francisco, CA". */}
-        <MapPin size={14} strokeWidth={1.75} className="shrink-0 sm:hidden" />
+        <MapPin size={14} strokeWidth={1.75} className="shrink-0" />
         <span className="truncate">
           {CITIES[city].name}, {CITIES[city].state}
         </span>
       </button>
-      <div className="ml-auto flex shrink-0 items-center">
+      <div className="flex shrink-0 items-center">
         {/* Phones: the main call to action lives in the nav's top-right corner; desktop floats it on the map. */}
         {me ? (
           <ShareButton city={city} mode={mode} prefs={prefs} theme={theme} className="mr-1 sm:hidden" />
@@ -73,7 +73,7 @@ export function NavBar({
         </button>
       </div>
       <CityDialog open={open === 'city'} onClose={close} city={city} />
-      <InfoDialog open={open === 'info'} onClose={close} city={city} />
+      <InfoDialog open={open === 'info'} onClose={close} />
       <SettingsDialog open={open === 'settings'} onClose={close} mode={mode} prefs={prefs} me={me} />
     </nav>
   )
@@ -184,7 +184,7 @@ export function ProgressCard({
           </div>
         ))}
       <p className="mt-3 border-t border-line pt-3 text-12 tabular-nums text-ink-2">
-        <span className="text-ink">{num(data.streetsCompleted)}</span> of {num(data.totalStreets)} streets complete
+        <span className="text-ink">{num(data.streetsCompleted)}</span> of {num(data.totalStreets)} paths complete
         {activities !== undefined && (
           <>
             {' · '}

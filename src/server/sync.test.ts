@@ -31,7 +31,7 @@ describe('rematch after a city is added', async () => {
     coords: string
   }[]
   const market = encodePolyline(rows.flatMap((r) => decodePolyline(r.coords, 6)))
-  // Chicago's lakefront, outside every city Floodfill covers.
+  // Chicago's lakefront, outside every city floodfill.world covers.
   const lakefront = encodePolyline([
     [41.8917, -87.6086],
     [41.8676, -87.6136],

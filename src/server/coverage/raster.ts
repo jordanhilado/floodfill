@@ -7,18 +7,29 @@ export type CoverageRaster = { width: number; height: number; /** Row-major bits
 export const RASTER_SIZE = 192
 
 /**
- * Draws tracks ([lat, lng] polylines) into the city's bounds, scaled so the longer side is `size`
- * pixels. Small enough to send with a profile, and drawn on the client as a mask.
+ * How a city's image is framed: its size, with the longer side `size` pixels, and where a
+ * [lat, lng] point lands in it. Shared with the outline drawn under the image on profiles.
  */
-export function rasterize(city: CityId, tracks: Iterable<[number, number][]>, size = RASTER_SIZE): CoverageRaster {
+export function rasterFrame(city: CityId, size = RASTER_SIZE) {
   const [[minLng, minLat], [maxLng, maxLat]] = CITIES[city].bounds
   // Equirectangular, which is close enough over a city.
   const kx = Math.cos((((minLat + maxLat) / 2) * Math.PI) / 180)
   const spanX = (maxLng - minLng) * kx
   const spanY = maxLat - minLat
   const scale = (size - 1) / Math.max(spanX, spanY)
-  const width = Math.round(spanX * scale) + 1
-  const height = Math.round(spanY * scale) + 1
+  return {
+    width: Math.round(spanX * scale) + 1,
+    height: Math.round(spanY * scale) + 1,
+    project: (lat: number, lng: number): [number, number] => [(lng - minLng) * kx * scale, (maxLat - lat) * scale],
+  }
+}
+
+/**
+ * Draws tracks ([lat, lng] polylines) into the city's bounds, scaled so the longer side is `size`
+ * pixels. Small enough to send with a profile, and drawn on the client as a mask.
+ */
+export function rasterize(city: CityId, tracks: Iterable<[number, number][]>, size = RASTER_SIZE): CoverageRaster {
+  const { width, height, project } = rasterFrame(city, size)
   const bytes = new Uint8Array(Math.ceil((width * height) / 8))
 
   const set = (x: number, y: number) => {
@@ -31,7 +42,7 @@ export function rasterize(city: CityId, tracks: Iterable<[number, number][]>, si
   for (const track of tracks) {
     let prev: [number, number] | null = null
     for (const [lat, lng] of track) {
-      const p: [number, number] = [(lng - minLng) * kx * scale, (maxLat - lat) * scale]
+      const p = project(lat, lng)
       if (!prev) set(p[0], p[1])
       else {
         // Step a pixel at a time along the line so it has no gaps.

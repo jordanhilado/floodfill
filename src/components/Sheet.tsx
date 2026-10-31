@@ -156,7 +156,7 @@ export function Sheet({ header, children }: { header: React.ReactNode; children:
         style={phone && height ? { height } : undefined}
         className={`absolute inset-x-0 bottom-0 z-10 flex h-[calc(168px+env(safe-area-inset-bottom))] flex-col overflow-hidden rounded-t-[16px] bg-surface shadow-[0_0_0_1px_var(--color-line),0_-8px_24px_rgba(0,0,0,0.12)] ${
           dragHeight === null ? 'transition-[height] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]' : ''
-        } sm:pointer-events-none sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-[60px] sm:h-auto sm:max-h-[calc(100dvh-60px)] sm:w-[380px] sm:gap-2 sm:overflow-y-auto sm:overscroll-contain sm:rounded-none sm:bg-transparent sm:p-4 sm:pb-14 sm:shadow-none sm:transition-none sm:[&>*>*]:pointer-events-auto`}
+        } sm:pointer-events-none sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-[60px] sm:h-auto sm:max-h-[calc(100dvh-60px)] sm:w-[400px] sm:gap-2 sm:overflow-y-auto sm:overscroll-contain sm:rounded-none sm:bg-transparent sm:p-4 sm:pb-14 sm:shadow-none sm:transition-none sm:[&>*>*]:pointer-events-auto`}
       >
         <div
           ref={headerRef}

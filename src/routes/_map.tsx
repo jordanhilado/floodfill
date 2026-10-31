@@ -38,9 +38,9 @@ const search = z.object({
 const STRAVA_NOTICES: Record<string, string> = {
   connected: 'Strava connected. Importing your activities…',
   denied: "Strava access wasn't granted. You can connect any time from Settings.",
-  scope: 'Floodfill needs permission to view your activities. Connect again and keep that box checked.',
-  taken: 'That Strava account is already connected to another Floodfill account.',
-  full: "Floodfill has reached Strava's limit on connected athletes. We've applied to raise it and will email you when you can connect. Meanwhile, import your Strava export from Settings.",
+  scope: 'floodfill.world needs permission to view your activities. Connect again and keep that box checked.',
+  taken: 'That Strava account is already connected to another floodfill.world account.',
+  full: "floodfill.world has reached Strava's limit on connected athletes. We've applied to raise it and will email you when you can connect. Meanwhile, import your Strava export from Settings.",
   signin: 'Sign in again, then connect Strava.',
   error: "Couldn't connect Strava. Try again from Settings.",
 }
@@ -62,7 +62,7 @@ export const Route = createFileRoute('/_map')({
     const { name } = CITIES[city]
     return {
       meta: [
-        { title: `Floodfill · ${name} street coverage` },
+        { title: `floodfill.world · ${name} street coverage` },
         { name: 'description', content: `How much of ${name} you have covered, from your Strava activities.` },
       ],
       // Start the street network download before the map bundle loads.
@@ -183,7 +183,7 @@ function Home() {
           />
         </Suspense>
       </ClientOnly>
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-col gap-2 p-4 sm:w-[380px]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-col gap-2 p-4 sm:w-[400px]">
         <div className="pointer-events-auto">
           <NavBar city={city} mode={mode} prefs={prefs} theme={theme} me={me} onGetStarted={getStarted} />
         </div>
