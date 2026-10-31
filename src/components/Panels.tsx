@@ -99,11 +99,15 @@ export function GetStartedCard({ city, scheme, onGetStarted }: { city: CityId; s
       <h1 className="text-14 font-medium">How much of {CITIES[city].name} have you covered?</h1>
       <p className="mt-1 text-13 text-ink-2">
         Connect Strava and watch every street and path you've run, walked or ridden turn{' '}
-        <span className="inline-flex items-center gap-1 text-ink">
-          <span className="size-2 rounded-full bg-done" aria-hidden />
-          {SCHEMES[scheme].doneName}
-        </span>
-        . Then see where you rank in the city.
+        {/* Inline, not flex, so the color name shares the sentence's baseline; nowrap keeps the period with it. */}
+        <span className="whitespace-nowrap">
+          <span className="text-ink">
+            <span className="mr-1 inline-block size-2 rounded-full bg-done align-middle" aria-hidden />
+            {SCHEMES[scheme].doneName}
+          </span>
+          .
+        </span>{' '}
+        Then see where you rank in the city.
       </p>
       <button
         type="button"
