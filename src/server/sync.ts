@@ -5,7 +5,7 @@ import { applyActivityCoverage, type Mode } from './coverage/apply'
 import { matchTrack } from './coverage/match'
 import { loadCityIndex, type CityIndex } from './coverage/segments'
 import { chunk, getState, MAX_PARAMS, setState } from './db'
-import { StravaClient, StravaError, stravaConfigured, type StravaAccount, type StravaSummaryActivity } from './strava/client'
+import { StravaAuthError, StravaClient, StravaError, stravaConfigured, type StravaAccount, type StravaSummaryActivity } from './strava/client'
 import { RateBudgetExhausted, RateLimiter } from './strava/rate-limit'
 
 /** Summary polylines are simplified, so long straight edges are expected. */
@@ -13,6 +13,13 @@ const SUMMARY_MAX_GAP_M = 2000
 /** Full-resolution streams sample every ~1 s; longer jumps are GPS dropouts. */
 const STREAM_MAX_GAP_M = 150
 const PER_PAGE = 200
+/** With webhooks on, accounts with no events are still listed this often, in case one was missed. */
+const WEBHOOK_FALLBACK_MS = 7 * 24 * 60 * 60 * 1000
+/** How long sync_runs rows are kept. */
+const RUN_LOG_MS = 30 * 24 * 60 * 60 * 1000
+
+/** Strava webhooks are set up (see routes/api/strava/webhook.ts), so new activities arrive as events. */
+export const webhooksEnabled = (env: Env) => Boolean(env.STRAVA_WEBHOOK_TOKEN)
 
 export type StopReason = 'complete' | 'rate_limit' | 'time' | 'not_configured' | 'not_connected' | 'busy' | 'error'
 
@@ -39,9 +46,20 @@ export async function runSync(
   if (!stravaConfigured(env)) return { ...result, stopReason: 'not_configured' }
 
   const db = env.DB
+  // The cron lists every account each run unless webhooks say who has something new. Strava's
+  // read budget (2,000 a day by default) can't poll more than a few dozen accounts every 15
+  // minutes, so with many users webhooks are what keeps everyone current.
   const accounts = opts.userId
     ? await db.prepare('SELECT * FROM strava_accounts WHERE user_id = ?').bind(opts.userId).all<StravaAccount>()
-    : await db.prepare('SELECT * FROM strava_accounts ORDER BY COALESCE(last_sync_at, 0)').all<StravaAccount>()
+    : webhooksEnabled(env)
+      ? await db
+          .prepare(
+            `SELECT * FROM strava_accounts WHERE pending_sync = 1 OR backfill_done = 0 OR COALESCE(last_sync_at, 0) < ?
+             ORDER BY COALESCE(last_sync_at, 0)`,
+          )
+          .bind(Date.now() - WEBHOOK_FALLBACK_MS)
+          .all<StravaAccount>()
+      : await db.prepare('SELECT * FROM strava_accounts ORDER BY COALESCE(last_sync_at, 0)').all<StravaAccount>()
   if (opts.userId && accounts.results.length === 0) return { ...result, stopReason: 'not_connected' }
 
   const started = Date.now()
@@ -60,15 +78,33 @@ export async function runSync(
     // 0. After a city's street network is rebuilt or added, re-match stored tracks. No API requests.
     result.rematched = await rematch(db, outOfTime)
 
+    if (opts.trigger === 'cron') {
+      await db.prepare('DELETE FROM sync_runs WHERE started_at < ?').bind(started - RUN_LOG_MS).run()
+      await applyDeletions(db, env, limiter, outOfTime)
+    }
+
     for (const account of accounts.results) {
       if (outOfTime()) break
-      await syncAccount(db, env, limiter, account, outOfTime, result)
+      try {
+        await syncAccount(db, env, limiter, account, outOfTime, result)
+      } catch (err) {
+        // The rate budget is shared, so running out stops everyone. A manual sync reports its error.
+        if (err instanceof RateBudgetExhausted || opts.userId) throw err
+        // One account's trouble mustn't stop the run for everyone after it, or keep it first in
+        // line for the next run.
+        console.error(`sync failed for ${account.user_id}`, err)
+        await db.prepare('UPDATE strava_accounts SET last_sync_at = ? WHERE user_id = ?').bind(Date.now(), account.user_id).run()
+        result.error = err instanceof Error ? err.message : String(err)
+      }
     }
     if (outOfTime()) result.stopReason = 'time'
   } catch (err) {
     if (err instanceof RateBudgetExhausted) {
       result.stopReason = 'rate_limit'
       result.resumeAt = err.resetAt
+    } else if (err instanceof StravaAuthError) {
+      result.stopReason = 'error'
+      result.error = 'Strava access was revoked. Connect Strava again from Settings.'
     } else {
       result.stopReason = 'error'
       result.error = err instanceof Error ? err.message : String(err)
@@ -147,7 +183,23 @@ async function syncAccount(
 ) {
   const client = new StravaClient(db, env, limiter, account)
   const userId = account.user_id
-  const touch = () => db.prepare('UPDATE strava_accounts SET last_sync_at = ? WHERE user_id = ?').bind(Date.now(), userId).run()
+  try {
+    await listAndMatch(db, client, account, outOfTime, result)
+  } catch (err) {
+    if (!(err instanceof StravaAuthError)) throw err
+    // Access was revoked: drop the dead tokens so the account frees its place under Strava's
+    // athlete limit and the app asks to connect again. Activities and progress stay.
+    console.warn(`strava access revoked for ${userId}; disconnecting`)
+    await db.prepare('DELETE FROM strava_accounts WHERE user_id = ?').bind(userId).run()
+    throw err
+  }
+  await db.prepare('UPDATE strava_accounts SET last_sync_at = ? WHERE user_id = ?').bind(Date.now(), userId).run()
+}
+
+async function listAndMatch(db: D1Database, client: StravaClient, account: StravaAccount, outOfTime: () => boolean, result: SyncResult) {
+  const userId = account.user_id
+  // Cleared before listing, so an event that arrives meanwhile flags the account again.
+  await db.prepare('UPDATE strava_accounts SET pending_sync = 0 WHERE user_id = ?').bind(userId).run()
 
   // 1. New activities since this user's newest one.
   const newest = await db
@@ -212,7 +264,36 @@ async function syncAccount(
       }
     }
   }
-  await touch()
+}
+
+/**
+ * Removes activities that Strava's webhook says were deleted. Webhook calls aren't signed, so each
+ * deletion is checked with Strava first: one request each, and deletions are rare.
+ */
+async function applyDeletions(db: D1Database, env: Env, limiter: RateLimiter, outOfTime: () => boolean) {
+  const { results } = await db
+    .prepare(
+      `SELECT d.activity_id, a.mode, a.city, sa.* FROM strava_deletions d
+       LEFT JOIN activities a ON a.id = d.activity_id
+       LEFT JOIN strava_accounts sa ON sa.athlete_id = d.athlete_id AND sa.user_id = a.user_id
+       ORDER BY d.received_at LIMIT 50`,
+    )
+    .all<{ activity_id: number; mode: Mode | null; city: string | null } & Partial<StravaAccount>>()
+  for (const d of results) {
+    if (outOfTime()) break
+    // Only the Strava owner's own copy, and only once Strava confirms it's gone.
+    if (d.user_id && d.access_token) {
+      const account = d as StravaAccount
+      if (!(await new StravaClient(db, env, limiter, account).activityExists(d.activity_id))) {
+        if (d.city && d.mode && Object.hasOwn(CITIES, d.city)) {
+          // With no matches, this clears the activity's segments and recomputes the owner's coverage.
+          await applyActivityCoverage(db, await loadCityIndex(db, d.city as CityId), account.user_id, d.activity_id, d.mode, new Map())
+        }
+        await db.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').bind(d.activity_id, account.user_id).run()
+      }
+    }
+    await db.prepare('DELETE FROM strava_deletions WHERE activity_id = ?').bind(d.activity_id).run()
+  }
 }
 
 /**

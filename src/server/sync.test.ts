@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import { seededDatabase } from '../../scripts/totals'
 import { decodePolyline, encodePolyline } from '../lib/polyline'
 import { importActivities, ingest, rematchPending, runRematch, runSync } from './sync'
@@ -155,6 +155,44 @@ describe('importing a Strava export', async () => {
 
   it('keeps the track of an activity outside every city, for a city that opens later', () => {
     expect(activity(2)).toEqual({ user_id: 'u1', city: null, status: 'ignored', has_track: 1 })
+  })
+})
+
+describe('a cron run with a revoked account', async () => {
+  const db = await seededDatabase('sf')
+  const user = db.prepare(`INSERT INTO users (id, email, created_at) VALUES (?, ?, 0)`)
+  user.run('revoked', 'revoked@example.com')
+  user.run('fine', 'fine@example.com')
+  const account = db.prepare(
+    `INSERT INTO strava_accounts (user_id, athlete_id, access_token, refresh_token, expires_at, connected_at, last_sync_at)
+     VALUES (?, ?, 'access', 'refresh', ?, 0, ?)`,
+  )
+  // First in line: its access token has expired and Strava refuses to refresh it.
+  account.run('revoked', 1, 0, 0)
+  account.run('fine', 2, Math.floor(Date.now() / 1000) + 3600, 1)
+  vi.stubGlobal('fetch', async (url: string | URL) =>
+    String(url).includes('/oauth/token') ? new Response('{"message":"Bad Request"}', { status: 400 }) : Response.json([]),
+  )
+  afterAll(() => void vi.unstubAllGlobals())
+  const env = {
+    DB: d1(db),
+    STRAVA_CLIENT_ID: 'id',
+    STRAVA_CLIENT_SECRET: 'secret',
+    STRAVA_LIMIT_15MIN: '400',
+    STRAVA_LIMIT_DAILY: '4000',
+    STRAVA_READ_LIMIT_15MIN: '200',
+    STRAVA_READ_LIMIT_DAILY: '2000',
+    STRAVA_BUDGET_FRACTION: '0.9',
+  } as unknown as Env
+  const result = await runSync(env, { trigger: 'cron', timeBudgetMs: 60_000 })
+
+  it('disconnects the revoked account and still syncs the rest', () => {
+    expect(result.stopReason).toBe('complete')
+    expect(db.prepare(`SELECT user_id FROM strava_accounts`).all()).toEqual([{ user_id: 'fine' }])
+    expect(db.prepare(`SELECT backfill_done, last_sync_at > 1 AS synced FROM strava_accounts WHERE user_id = 'fine'`).get()).toEqual({
+      backfill_done: 1,
+      synced: 1,
+    })
   })
 })
 

@@ -19,6 +19,7 @@ type SegmentRow = {
 }
 
 export type CityIndex = {
+  city: CityId
   project: Projector
   segments: IndexedSegment[]
   byId: Map<number, IndexedSegment>
@@ -101,6 +102,7 @@ async function build(db: D1Database, city: CityId): Promise<CityIndex> {
     after = results[results.length - 1].id
   }
   return {
+    city,
     project,
     segments,
     byId: new Map(segments.map((s) => [s.id, s])),

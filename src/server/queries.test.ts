@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 import { seededDatabase } from '../../scripts/totals'
-import { getCoverageData, getNeighborhoodData, getStreetDetail, getStreetPage, type RankSort } from './queries'
+import { getCoverageData, getLeaderboard, getNeighborhoodData, getStreetDetail, getStreetPage, type RankSort } from './queries'
 
 /** D1's statement API over an in-memory SQLite database. */
 function d1(db: DatabaseSync) {
@@ -9,6 +9,7 @@ function d1(db: DatabaseSync) {
     bind: (...next: unknown[]) => stmt(sql, next),
     all: async () => ({ results: db.prepare(sql).all(...(args as [])) }),
     first: async () => db.prepare(sql).all(...(args as []))[0] ?? null,
+    run: async () => ({ meta: { changes: Number(db.prepare(sql).run(...(args as [])).changes) } }),
   })
   return { prepare: (sql: string) => stmt(sql) } as unknown as D1Database
 }
@@ -158,5 +159,69 @@ describe('street ranking', async () => {
         activities: old?.activities ?? 0,
       })
     }
+  })
+})
+
+// The leaderboard as one SQL query over every completed segment, as it ran before user_stats.
+const FULL_LEADERBOARD = (mode: 'foot' | 'bike') => `
+  WITH done AS (
+    SELECT c.user_id, SUM(s.length_m) AS m FROM coverage c JOIN segments s ON s.id = c.segment_id
+    WHERE c.mode = ?1 AND c.completed = 1 AND s.city = ?2 AND s.${mode} = 1
+    GROUP BY c.user_id
+  ),
+  acts AS (
+    SELECT user_id, COUNT(*) AS n FROM activities
+    WHERE mode = ?1 AND city = ?2 AND status != 'ignored' AND user_id IS NOT NULL
+    GROUP BY user_id
+  )
+  SELECT u.username, COALESCE(done.m, 0) AS m, COALESCE(acts.n, 0) AS n,
+         ROW_NUMBER() OVER (ORDER BY COALESCE(done.m, 0) DESC, COALESCE(acts.n, 0) DESC, u.username) AS rank
+  FROM users u
+  LEFT JOIN done ON done.user_id = u.id
+  LEFT JOIN acts ON acts.user_id = u.id
+  WHERE u.username IS NOT NULL
+    AND (EXISTS (SELECT 1 FROM strava_accounts sa WHERE sa.user_id = u.id)
+      OR EXISTS (SELECT 1 FROM activities a WHERE a.user_id = u.id))
+  ORDER BY rank`
+
+describe('leaderboard', async () => {
+  const db = await seededDatabase('sf')
+  const insUser = db.prepare(`INSERT INTO users (id, email, username, created_at) VALUES (?, ?, ?, 0)`)
+  for (const u of ['u1', 'u2', 'u3', 'u4']) insUser.run(u, `${u}@example.com`, u === 'u4' ? null : `name_${u}`)
+  // u3 has connected Strava but has no activities yet; u4 has no username and isn't ranked.
+  db.prepare(`INSERT INTO strava_accounts (user_id, athlete_id, access_token, refresh_token, expires_at, connected_at) VALUES ('u3', 3, '', '', 0, 0)`).run()
+  const insAct = db.prepare(
+    `INSERT INTO activities (id, mode, city, start_date, start_ts, status, updated_at, user_id) VALUES (?, ?, 'sf', '', 0, ?, 0, ?)`,
+  )
+  for (let a = 1; a <= 40; a++) insAct.run(a, a % 3 === 0 ? 'bike' : 'foot', a % 10 === 0 ? 'ignored' : 'detailed', a <= 25 ? 'u1' : a <= 38 ? 'u2' : 'u4')
+  const insCov = db.prepare(`INSERT OR IGNORE INTO coverage (user_id, segment_id, mode, mask, completed) VALUES (?, ?, ?, 1, ?)`)
+  for (let id = 1; id <= 6000; id++) {
+    insCov.run(id % 2 ? 'u1' : 'u2', id, id % 5 === 0 ? 'bike' : 'foot', id % 7 === 0 ? 0 : 1)
+    if (id % 3 === 0) insCov.run('u4', id, 'foot', 1)
+  }
+  // As migrations/0009 fills it: every user and city they have activities in, to be computed.
+  db.exec(`INSERT INTO user_stats (user_id, city, mode) SELECT DISTINCT user_id, city, mode FROM activities
+           WHERE user_id IS NOT NULL AND city IS NOT NULL AND mode IS NOT NULL`)
+  const D1 = d1(db)
+
+  it('ranks like the query over every completed segment', async () => {
+    for (const mode of ['foot', 'bike'] as const) {
+      const expected = db.prepare(FULL_LEADERBOARD(mode)).all(mode, 'sf') as { username: string; m: number; n: number; rank: number }[]
+      const board = await getLeaderboard(D1, 'sf', mode, 'u2')
+      expect(board.players).toBe(expected.length)
+      expect(board.rows.map((r) => [r.username, r.rank, r.activities, Math.round(r.meters)])).toEqual(
+        expected.map((r) => [r.username, r.rank, r.n, Math.round(r.m)]),
+      )
+      expect(board.rows.find((r) => r.you)?.username).toBe('name_u2')
+    }
+  })
+
+  it('picks up new coverage once a row is marked stale', async () => {
+    const before = (await getLeaderboard(D1, 'sf', 'foot', null)).rows.find((r) => r.username === 'name_u1')!.meters
+    db.prepare(`UPDATE coverage SET completed = 1 WHERE user_id = 'u1' AND mode = 'foot'`).run()
+    expect((await getLeaderboard(D1, 'sf', 'foot', null)).rows.find((r) => r.username === 'name_u1')!.meters).toBe(before)
+    db.prepare(`UPDATE user_stats SET stale = 1 WHERE user_id = 'u1'`).run()
+    const after = (await getLeaderboard(D1, 'sf', 'foot', null)).rows.find((r) => r.username === 'name_u1')!.meters
+    expect(after).toBeGreaterThan(before)
   })
 })

@@ -25,6 +25,10 @@ export async function applyActivityCoverage(
   const writes: D1PreparedStatement[] = [
     db.prepare('DELETE FROM activity_segments WHERE activity_id = ?').bind(activityId),
     db.prepare('DELETE FROM activity_groups WHERE activity_id = ?').bind(activityId),
+    // The user's totals for leaderboards are recomputed on the next read (see refreshUserStats).
+    db
+      .prepare(`INSERT INTO user_stats (user_id, city, mode, stale) VALUES (?, ?, ?, 1) ON CONFLICT(user_id, city, mode) DO UPDATE SET stale = 1`)
+      .bind(userId, index.city, mode),
   ]
   for (const rows of chunk([...masks], Math.floor(MAX_PARAMS / 3))) {
     writes.push(
