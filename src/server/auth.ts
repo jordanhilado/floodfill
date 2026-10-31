@@ -174,6 +174,14 @@ export async function signOut(db: D1Database) {
   deleteCookie(SESSION_COOKIE, { path: '/' })
 }
 
+/** Deletes expired sessions, and sign-in codes past both their expiry and the lockout window. */
+export async function pruneAuth(db: D1Database) {
+  await db.batch([
+    db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now()),
+    db.prepare('DELETE FROM login_codes WHERE expires_at < ? AND sent_at < ?').bind(now(), now() - LOCKOUT_MS),
+  ])
+}
+
 export async function usernameAvailability(db: D1Database, username: string, userId?: string) {
   if (!USERNAME_RE.test(username)) return { available: false, reason: `Use ${USERNAME_RULES}.` }
   const taken = await db

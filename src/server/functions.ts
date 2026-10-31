@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { CITY_IDS } from '../lib/cities'
 import { IMPORT_BATCH, STRAVA_FULL_MESSAGE } from '../lib/strava-export'
 import {
+  AuthError,
   currentUser,
   requireUser,
   setUsername,
@@ -24,13 +25,19 @@ import {
   getStreetPage,
   getSyncStatusData,
 } from './queries'
+import { allow, ipKey } from './limits'
 import { authorizeUrl, stravaConfigured } from './strava/client'
 import { joinWaitlist, stravaCapacity } from './strava/capacity'
-import { importActivities, runRematch, runSync } from './sync'
+import { importActivities, runRematch, runSync, type SyncResult } from './sync'
 
 const mode = z.enum(['foot', 'bike'])
 const city = z.enum(CITY_IDS)
 const userId = async () => (await currentUser(env.DB))?.id ?? null
+
+/** Sign-in attempts from one address: a cap on emails sent and codes guessed, on top of the per-email limits. */
+async function limitSignIn() {
+  if (!(await allow(env.AUTH_LIMITER, ipKey()))) throw new AuthError('Too many tries. Wait a minute and try again.')
+}
 
 // ── Account ──────────────────────────────────────────────────────────────────
 
@@ -58,11 +65,15 @@ export const getMe = createServerFn({ method: 'GET' }).handler(async () => {
 
 export const requestCode = createServerFn({ method: 'POST' })
   .validator(z.object({ identifier: z.string().trim().min(1).max(254) }))
-  .handler(({ data }) => startSignIn(env, data.identifier))
+  .handler(async ({ data }) => {
+    await limitSignIn()
+    return startSignIn(env, data.identifier)
+  })
 
 export const confirmCode = createServerFn({ method: 'POST' })
   .validator(z.object({ identifier: z.string().trim().min(1).max(254), code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code.') }))
   .handler(async ({ data }) => {
+    await limitSignIn()
     const user = await verifySignIn(env, data.identifier, data.code)
     const strava = await env.DB.prepare('SELECT 1 AS x FROM strava_accounts WHERE user_id = ?').bind(user.id).first()
     return { needsUsername: user.username === null, stravaConnected: strava !== null }
@@ -200,6 +211,10 @@ export const getSyncStatus = createServerFn({ method: 'GET' }).handler(async () 
  */
 export const syncNow = createServerFn({ method: 'POST' }).handler(async () => {
   const user = await requireUser(env.DB)
+  // Reported like another sync holding the lock.
+  if (!(await allow(env.SYNC_LIMITER, `user:${user.id}`))) {
+    return { stopReason: 'busy', resumeAt: null, requests: 0, listed: 0, detailed: 0, rematched: 0, error: null } satisfies SyncResult
+  }
   return runSync(env, { trigger: 'manual', timeBudgetMs: 20_000, userId: user.id })
 })
 
@@ -238,4 +253,8 @@ export const importStravaBatch = createServerFn({ method: 'POST' })
  * this for every visitor while a rematch is pending: it makes no Strava requests, and once there
  * is nothing left to match it is a single read.
  */
-export const rematchNow = createServerFn({ method: 'POST' }).handler(() => runRematch(env, 20_000))
+export const rematchNow = createServerFn({ method: 'POST' }).handler(async () => {
+  // Anyone can call this, so cap it per address. Busy makes the client wait and retry.
+  if (!(await allow(env.REMATCH_LIMITER, ipKey()))) return { stopReason: 'busy' as const, rematched: 0 }
+  return runRematch(env, 20_000)
+})

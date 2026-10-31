@@ -11,7 +11,15 @@ export const Route = createFileRoute('/api/strava/callback')({
     handlers: {
       GET: async ({ request }) => {
         const url = new URL(request.url)
-        const back = (status: string) => Response.redirect(`${url.origin}/?strava=${status}`, 302)
+        // The state cookie is single use: every way out clears it.
+        const back = (status: string) =>
+          new Response(null, {
+            status: 302,
+            headers: {
+              Location: `${url.origin}/?strava=${status}`,
+              'Set-Cookie': `ff_oauth_state=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${url.protocol === 'https:' ? '; Secure' : ''}`,
+            },
+          })
 
         if (url.searchParams.get('error')) return back('denied')
         const code = url.searchParams.get('code')

@@ -355,10 +355,11 @@ function setActivityStatus(db: D1Database, id: number, status: string) {
  * Stores new activities and immediately credits coverage from their summary polyline,
  * which costs no extra API requests. Returns the number of new activities.
  */
-async function ingest(db: D1Database, userId: string, acts: StravaSummaryActivity[]) {
+export async function ingest(db: D1Database, userId: string, acts: StravaSummaryActivity[]) {
   const known = new Set<number>()
   for (const ids of chunk(acts.map((a) => a.id), MAX_PARAMS - 1)) {
     const marks = ids.map(() => '?').join(',')
+    await releaseForeign(db, userId, ids, marks)
     // Activities imported before accounts existed have no owner: they belong to this athlete.
     const { results: claimed } = await db
       .prepare(
@@ -429,6 +430,24 @@ async function ingest(db: D1Database, userId: string, acts: StravaSummaryActivit
     }
   }
   return added
+}
+
+/**
+ * Strava lists an activity only to the athlete who owns it, so a row another user holds under
+ * the same id came from an export import with a borrowed id. Undo that user's credit for it and
+ * drop the row, so the owner's copy goes in fresh.
+ */
+async function releaseForeign(db: D1Database, userId: string, ids: number[], marks: string) {
+  const { results } = await db
+    .prepare(`SELECT id, user_id, mode, city FROM activities WHERE user_id IS NOT NULL AND user_id != ? AND id IN (${marks})`)
+    .bind(userId, ...ids)
+    .all<{ id: number; user_id: string; mode: Mode | null; city: CityId | null }>()
+  for (const a of results) {
+    console.warn(`[floodfill] activity ${a.id} held by ${a.user_id} returned to its Strava owner ${userId}`)
+    // With no matches, this clears the activity's segments and recomputes the holder's coverage.
+    if (a.city && a.mode && CITIES[a.city]) await applyActivityCoverage(db, await loadCityIndex(db, a.city), a.user_id, a.id, a.mode, new Map())
+    await db.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').bind(a.id, a.user_id).run()
+  }
 }
 
 /** One activity from a Strava export (see src/lib/strava-export.ts), with its full GPS track. */

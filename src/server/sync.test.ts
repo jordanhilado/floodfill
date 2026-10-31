@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 import { seededDatabase } from '../../scripts/totals'
 import { decodePolyline, encodePolyline } from '../lib/polyline'
-import { importActivities, rematchPending, runRematch, runSync } from './sync'
+import { importActivities, ingest, rematchPending, runRematch, runSync } from './sync'
 
 /** D1's statement API over an in-memory SQLite database. */
 function d1(db: DatabaseSync) {
@@ -155,5 +155,36 @@ describe('importing a Strava export', async () => {
 
   it('keeps the track of an activity outside every city, for a city that opens later', () => {
     expect(activity(2)).toEqual({ user_id: 'u1', city: null, status: 'ignored', has_track: 1 })
+  })
+})
+
+describe('an imported activity under someone else's Strava id', async () => {
+  const db = await seededDatabase('sf')
+  const rows = db.prepare(`SELECT coords FROM segments WHERE city = 'sf' AND name = 'Market Street' AND foot = 1 ORDER BY id LIMIT 8`).all() as {
+    coords: string
+  }[]
+  const market = encodePolyline(rows.flatMap((r) => decodePolyline(r.coords, 6)))
+  const completed = (userId: string) =>
+    (db.prepare('SELECT COUNT(*) AS n FROM coverage WHERE user_id = ? AND completed = 1').get(userId) as { n: number }).n
+  // Someone imports an "export" that borrows the id of another athlete's real activity.
+  await importActivities(d1(db), 'squatter', [
+    { id: 77, name: 'Walk', sportType: 'Walk', startDate: '2024-05-01T15:00:00.000Z', distanceM: 1000, movingTimeS: 600, polyline: market },
+  ])
+  const before = completed('squatter')
+  // Then the owner's Strava sync lists it.
+  const added = await ingest(d1(db), 'owner', [
+    { id: 77, name: 'Morning Walk', sport_type: 'Walk', start_date: '2024-05-01T15:00:00Z', distance: 1000, moving_time: 600, map: { summary_polyline: market } },
+  ])
+
+  it('goes to the athlete Strava lists it for', () => {
+    expect(before).toBeGreaterThan(0)
+    expect(added).toBe(1)
+    expect(db.prepare('SELECT user_id, name FROM activities WHERE id = 77').get()).toEqual({ user_id: 'owner', name: 'Morning Walk' })
+    expect(completed('owner')).toBeGreaterThan(0)
+  })
+
+  it("takes back the importer's credit for it", () => {
+    expect(completed('squatter')).toBe(0)
+    expect(db.prepare('SELECT COUNT(*) AS n FROM coverage WHERE user_id = ?').get('squatter')).toEqual({ n: 0 })
   })
 })
