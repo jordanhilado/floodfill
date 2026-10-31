@@ -51,7 +51,8 @@ export function NavBar({
         aria-label={`City: ${CITIES[city].name}, ${CITIES[city].state}. Change city`}
         className="-ml-1 flex h-8 min-w-0 items-center gap-1 rounded-[8px] px-1 text-13 text-ink-2 transition-colors hover:bg-fill-strong hover:text-ink"
       >
-        <MapPin size={14} strokeWidth={1.75} className="shrink-0" />
+        {/* Desktop shows the domain beside it, so it drops the pin to fit "San Francisco, CA". */}
+        <MapPin size={14} strokeWidth={1.75} className="shrink-0 sm:hidden" />
         <span className="truncate">
           {CITIES[city].name}, {CITIES[city].state}
         </span>
