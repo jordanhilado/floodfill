@@ -12,7 +12,8 @@ export type StravaCapacity = { connected: number; limit: number; full: boolean }
 const FULL_KEY = 'strava_full'
 
 export async function stravaCapacity(env: Env): Promise<StravaCapacity> {
-  const limit = Number(env.STRAVA_ATHLETE_LIMIT) || Infinity
+  // Unset means no limit. 0 means full, which is handy for trying the full state locally.
+  const limit = env.STRAVA_ATHLETE_LIMIT ? Number(env.STRAVA_ATHLETE_LIMIT) : Infinity
   const [row, refused] = await Promise.all([
     env.DB.prepare('SELECT COUNT(*) AS n FROM strava_accounts').first<{ n: number }>(),
     getState<{ limit: number }>(env.DB, FULL_KEY),
