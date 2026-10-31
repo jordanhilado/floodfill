@@ -101,11 +101,11 @@ export async function startSignIn(env: Env, identifier: string) {
 function sendCode(env: Env, email: string, code: string) {
   return env.EMAIL.send({
     to: email,
-    from: { email: env.EMAIL_FROM, name: 'Floodfill' },
-    subject: `${code} is your Floodfill code`,
-    text: `Your Floodfill sign-in code is ${code}.\n\nIt expires in 10 minutes. If you didn't ask for it, you can ignore this email.`,
+    from: { email: env.EMAIL_FROM, name: 'floodfill.world' },
+    subject: `${code} is your floodfill.world code`,
+    text: `Your floodfill.world sign-in code is ${code}.\n\nIt expires in 10 minutes. If you didn't ask for it, you can ignore this email.`,
     html: `<div style="font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:#292929;letter-spacing:-0.15px">
-  <p style="font-size:14px;margin:0 0 16px">Your Floodfill sign-in code:</p>
+  <p style="font-size:14px;margin:0 0 16px">Your floodfill.world sign-in code:</p>
   <p style="font-size:24px;font-weight:500;letter-spacing:4px;margin:0 0 16px">${code}</p>
   <p style="font-size:13px;color:#5D5D5D;margin:0">It expires in 10 minutes. If you didn't ask for it, you can ignore this email.</p>
 </div>`,
@@ -172,6 +172,14 @@ export async function signOut(db: D1Database) {
   const token = getCookie(SESSION_COOKIE)
   if (token) await db.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha256(token)).run()
   deleteCookie(SESSION_COOKIE, { path: '/' })
+}
+
+/** Deletes expired sessions, and sign-in codes past both their expiry and the lockout window. */
+export async function pruneAuth(db: D1Database) {
+  await db.batch([
+    db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now()),
+    db.prepare('DELETE FROM login_codes WHERE expires_at < ? AND sent_at < ?').bind(now(), now() - LOCKOUT_MS),
+  ])
 }
 
 export async function usernameAvailability(db: D1Database, username: string, userId?: string) {

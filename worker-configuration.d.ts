@@ -4,6 +4,9 @@
 interface __BaseEnv_Env {
 	DB: D1Database;
 	EMAIL: SendEmail;
+	AUTH_LIMITER: RateLimit;
+	SYNC_LIMITER: RateLimit;
+	REMATCH_LIMITER: RateLimit;
 	STRAVA_LIMIT_15MIN: "400";
 	STRAVA_LIMIT_DAILY: "4000";
 	STRAVA_READ_LIMIT_15MIN: "200";

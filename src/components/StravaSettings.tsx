@@ -66,7 +66,7 @@ export function StravaSettings() {
       <div>
         {a.total > 0 && (
           <p className="mb-3 text-12 tabular-nums text-ink-2">
-            {num(a.total)} imported {a.total === 1 ? 'activity' : 'activities'} · {num(a.counted)} in Floodfill cities
+            {num(a.total)} imported {a.total === 1 ? 'activity' : 'activities'} · {num(a.counted)} in floodfill.world cities
           </p>
         )}
         {status.stravaFull ? (

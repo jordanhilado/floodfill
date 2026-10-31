@@ -192,13 +192,20 @@ function NeighborhoodList({
         : [...byProgress].sort((a, b) => b.activities - a.activities || b.percent - a.percent || a.name.localeCompare(b.name)),
     [byProgress, sort],
   )
+  const [input, setInput] = useState('')
+  const q = input.trim().toLowerCase()
+  // Matches keep their rank in the full list.
+  const shown = useMemo(
+    () => neighborhoods.map((n, i) => ({ ...n, rank: i + 1 })).filter((n) => !q || n.name.toLowerCase().includes(q)),
+    [neighborhoods, q],
+  )
   const navigate = useNavigate()
   const list = useRef<HTMLOListElement>(null)
-  const rank = neighborhoods.findIndex((n) => n.name === selected)
+  const rank = shown.findIndex((n) => n.name === selected)
   const select = (name: string | undefined) =>
     navigate({ to: '/', search: (prev) => ({ ...prev, mode: prev.mode ?? 'foot', hood: name }), replace: true })
   const [showAll, setShowAll] = useState(false)
-  const all = showAll || rank >= PHONE_ROWS
+  const all = showAll || rank >= PHONE_ROWS || q !== ''
 
   // Keep the selection visible when it's chosen elsewhere (e.g. opened from a link). Desktop
   // only: on phones the list is part of the sheet, which shouldn't jump.
@@ -208,16 +215,25 @@ function NeighborhoodList({
 
   return (
     <>
+      <SearchField
+        value={input}
+        onChange={setInput}
+        placeholder={`Search ${num(neighborhoods.length)} neighborhoods`}
+        label="Search neighborhoods"
+      />
+      {shown.length === 0 && (
+        <p className="flex h-12 items-center justify-center text-13 text-ink-2">No neighborhoods match “{input.trim()}”.</p>
+      )}
       <ol
         ref={list}
-        className="-mx-1 mt-3 px-1 sm:max-h-[var(--list-h)] sm:overflow-y-auto sm:overscroll-contain"
+        className="-mx-1 mt-2 px-1 sm:max-h-[var(--list-h)] sm:overflow-y-auto sm:overscroll-contain"
         style={{ '--list-h': `${ROW_PX * VISIBLE_ROWS}px` } as React.CSSProperties}
         aria-label="Neighborhoods by progress"
       >
-        {neighborhoods.map((n, i) => (
+        {shown.map((n, i) => (
           <li key={n.name} style={{ height: ROW_PX }} className={!all && i >= PHONE_ROWS ? 'max-sm:hidden' : ''}>
             <RankRow
-              rank={i + 1}
+              rank={n.rank}
               name={n.name}
               percent={n.percent}
               activities={n.activities}
@@ -230,7 +246,7 @@ function NeighborhoodList({
           </li>
         ))}
       </ol>
-      {neighborhoods.length > PHONE_ROWS && rank < PHONE_ROWS && (
+      {!q && neighborhoods.length > PHONE_ROWS && rank < PHONE_ROWS && (
         <button
           type="button"
           onClick={() => setShowAll((v) => !v)}
@@ -263,7 +279,6 @@ function StreetList({
     return () => clearTimeout(t)
   }, [input])
 
-  const sheet = useSheet()
   const { data, hasNextPage, fetchNextPage, isFetchingNextPage, isPending, isFetching } = useInfiniteQuery({
     ...streetsQuery(city, mode, q, sort),
     // Keep showing the last results while a new search loads.
@@ -294,28 +309,13 @@ function StreetList({
 
   return (
     <>
-      <label className="mt-3 flex h-8 items-center gap-2 rounded-[8px] bg-fill px-2.5 text-13 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-done">
-        <Search size={14} strokeWidth={1.75} className="shrink-0 text-ink-2" />
-        <input
-          type="search"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          // Phones: raise the sheet so the results stay above the keyboard.
-          onFocus={sheet.expand}
-          placeholder={first ? `Search ${num(first.ranked)} paths` : 'Search paths'}
-          aria-label="Search paths"
-          className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-2 [&::-webkit-search-cancel-button]:hidden"
-        />
-        {isFetching && !isFetchingNextPage ? (
-          <Loader2 size={14} className="shrink-0 animate-spin text-ink-2" />
-        ) : (
-          input && (
-            <button type="button" onClick={() => setInput('')} aria-label="Clear search" className="shrink-0 text-ink-2 hover:text-ink">
-              <X size={14} strokeWidth={2} />
-            </button>
-          )
-        )}
-      </label>
+      <SearchField
+        value={input}
+        onChange={setInput}
+        placeholder={first ? `Search ${num(first.ranked)} paths` : 'Search paths'}
+        label="Search paths"
+        busy={isFetching && !isFetchingNextPage}
+      />
 
       <div
         ref={scroller}
@@ -326,10 +326,10 @@ function StreetList({
       >
         {isPending ? (
           <div className="flex h-full items-center justify-center gap-2 text-13 text-ink-2">
-            <Loader2 size={14} className="animate-spin" /> Ranking streets…
+            <Loader2 size={14} className="animate-spin" /> Ranking paths…
           </div>
         ) : rows.length === 0 ? (
-          <p className="flex h-full items-center justify-center text-13 text-ink-2">No streets match “{q}”.</p>
+          <p className="flex h-full items-center justify-center text-13 text-ink-2">No paths match “{q}”.</p>
         ) : (
           <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
             {items.map((item) => {
@@ -363,5 +363,47 @@ function StreetList({
       </div>
       {first && q && <p className="mt-2 text-12 text-ink-2">{num(first.matches)} matching</p>}
     </>
+  )
+}
+
+/** The search box above each list. */
+function SearchField({
+  value,
+  onChange,
+  placeholder,
+  label,
+  busy = false,
+}: {
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+  label: string
+  /** Shows a spinner in place of the clear button while results load. */
+  busy?: boolean
+}) {
+  const sheet = useSheet()
+  return (
+    <label className="mt-3 flex h-8 items-center gap-2 rounded-[8px] bg-fill px-2.5 text-13 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-done">
+      <Search size={14} strokeWidth={1.75} className="shrink-0 text-ink-2" />
+      <input
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        // Phones: raise the sheet so the results stay above the keyboard.
+        onFocus={sheet.expand}
+        placeholder={placeholder}
+        aria-label={label}
+        className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-2 [&::-webkit-search-cancel-button]:hidden"
+      />
+      {busy ? (
+        <Loader2 size={14} className="shrink-0 animate-spin text-ink-2" />
+      ) : (
+        value && (
+          <button type="button" onClick={() => onChange('')} aria-label="Clear search" className="shrink-0 text-ink-2 hover:text-ink">
+            <X size={14} strokeWidth={2} />
+          </button>
+        )
+      )}
+    </label>
   )
 }

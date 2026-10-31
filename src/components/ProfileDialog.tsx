@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { Check, Link } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import type { CityId } from '../lib/cities'
+import { cityOutlineQuery, OUTLINE_PAD } from '../lib/city-outline'
 import type { Unit } from '../lib/prefs'
 import { profileMapsQuery, type Mode } from '../lib/query-options'
 import type { CoverageRaster } from '../server/coverage/raster'
@@ -70,7 +72,11 @@ export function ProfileDialog({
               <li key={c.city} className="py-2 first:pt-0">
                 <Standing title={c.name} standing={c} unit={unit} how={mode === 'foot' ? 'on foot' : 'by bike'} />
                 {c.meters > 0 && (
-                  <CoverageThumbnail raster={maps?.[c.city] ?? null} label={`Paths @${profile.username} has completed in ${c.name}`} />
+                  <CoverageThumbnail
+                    city={c.city}
+                    raster={maps?.[c.city] ?? null}
+                    label={`Paths @${profile.username} has completed in ${c.name}`}
+                  />
                 )}
               </li>
             ))}
@@ -84,38 +90,47 @@ export function ProfileDialog({
 }
 
 /**
- * A small picture of the paths someone has completed in one city, in the "done" color. The
- * raster becomes a mask over a done-colored fill, so it follows the theme and palette.
+ * A small picture of the paths someone has completed in one city, in the "done" color, inside
+ * a faint outline of the city. Each raster becomes a mask over a colored fill, so it follows the
+ * theme and palette. Both masks share one padded frame, so they line up.
  */
-function CoverageThumbnail({ raster, label }: { raster: CoverageRaster | null; label: string }) {
+function CoverageThumbnail({ city, raster, label }: { city: CityId; raster: CoverageRaster | null; label: string }) {
   const [mask, setMask] = useState<string | null>(null)
   useEffect(() => setMask(raster ? maskUrl(raster) : null), [raster])
+  const { data: outline } = useQuery(cityOutlineQuery(city))
   return (
     <div role="img" aria-label={label} className="mt-2 h-32 rounded-[8px] bg-fill p-2">
-      {mask && (
-        <div
-          className="size-full bg-done"
-          style={{
-            maskImage: `url(${mask})`,
-            maskSize: 'contain',
-            maskRepeat: 'no-repeat',
-            maskPosition: 'center',
-            WebkitMaskImage: `url(${mask})`,
-            WebkitMaskSize: 'contain',
-            WebkitMaskRepeat: 'no-repeat',
-            WebkitMaskPosition: 'center',
-          }}
-        />
-      )}
+      <div className="relative size-full">
+        {outline && <MaskFill url={outline} className="bg-ink-3" />}
+        {mask && <MaskFill url={mask} className="bg-done" />}
+      </div>
     </div>
   )
 }
 
-/** The raster as a PNG whose covered pixels are opaque and the rest transparent. */
+function MaskFill({ url, className }: { url: string; className: string }) {
+  return (
+    <div
+      className={`absolute inset-0 ${className}`}
+      style={{
+        maskImage: `url(${url})`,
+        maskSize: 'contain',
+        maskRepeat: 'no-repeat',
+        maskPosition: 'center',
+        WebkitMaskImage: `url(${url})`,
+        WebkitMaskSize: 'contain',
+        WebkitMaskRepeat: 'no-repeat',
+        WebkitMaskPosition: 'center',
+      }}
+    />
+  )
+}
+
+/** The raster as a PNG whose covered pixels are opaque and the rest transparent, padded like the outline. */
 function maskUrl({ width, height, bits }: CoverageRaster) {
   const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
+  canvas.width = width + 2 * OUTLINE_PAD
+  canvas.height = height + 2 * OUTLINE_PAD
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
   const image = ctx.createImageData(width, height)
@@ -123,7 +138,7 @@ function maskUrl({ width, height, bits }: CoverageRaster) {
   for (let i = 0; i < width * height; i++) {
     if (bytes.charCodeAt(i >> 3) & (1 << (i & 7))) image.data[i * 4 + 3] = 255
   }
-  ctx.putImageData(image, 0, 0)
+  ctx.putImageData(image, OUTLINE_PAD, OUTLINE_PAD)
   return canvas.toDataURL()
 }
 

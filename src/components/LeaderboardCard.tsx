@@ -157,17 +157,14 @@ function Standings({ mode, unit, how }: { mode: Mode; unit: Unit; how: string })
   const { data, isPending } = useQuery(standingsQuery(mode))
   if (isPending || !data) return <Loading />
   return (
-    <>
-      <ul className="mt-3 divide-y divide-line">
-        {data.map((c) => (
-          <li key={c.city} className="py-2 first:pt-0">
-            <Standing title={c.name} standing={c} unit={unit} how={how} />
-            {!c.rank && <p className="mt-1 text-12 text-ink-2">Choose a username and connect Strava to be ranked.</p>}
-          </li>
-        ))}
-      </ul>
-      <p className="mt-2 text-12 text-ink-3">More cities coming soon.</p>
-    </>
+    <ul className="mt-3 divide-y divide-line">
+      {data.map((c) => (
+        <li key={c.city} className="py-2 first:pt-0">
+          <Standing title={c.name} standing={c} unit={unit} how={how} />
+          {!c.rank && <p className="mt-1 text-12 text-ink-2">Choose a username and connect Strava to be ranked.</p>}
+        </li>
+      ))}
+    </ul>
   )
 }
 

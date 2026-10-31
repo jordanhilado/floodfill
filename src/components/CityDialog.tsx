@@ -3,7 +3,7 @@ import { Check } from 'lucide-react'
 import { CITIES, CITY_IDS, DEFAULT_CITY, UPCOMING_CITIES, type CityId } from '../lib/cities'
 import { Modal } from './Modal'
 
-/** Cities Floodfill covers, and the largest US cities that are on the way. */
+/** Cities floodfill.world covers, and the largest US cities that are on the way. */
 export function CityDialog({ open, onClose, city }: { open: boolean; onClose: () => void; city: CityId }) {
   const navigate = useNavigate()
   const enabled = new Set(CITY_IDS.map((id) => CITIES[id].name))

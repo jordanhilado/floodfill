@@ -26,7 +26,7 @@ export function StravaFull({ compact = false }: { compact?: boolean }) {
   const details = (
     <>
       <p className="mt-1 text-12 text-ink-2">
-        Strava limits how many people can connect to a new app, and Floodfill has reached that limit. We've applied to
+        Strava limits how many people can connect to a new app, and floodfill.world has reached that limit. We've applied to
         Strava to raise it, and we'll email you as soon as you can connect. Until then, you can import your activities
         from a Strava export.
       </p>

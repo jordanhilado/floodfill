@@ -361,7 +361,7 @@ async function leaderboard(db: D1Database, city: CityId, mode: Mode, userId: str
 
 export type CityStanding = Awaited<ReturnType<typeof getPersonalStandings>>[number]
 
-/** Your standing in every city Floodfill covers, for one mode. */
+/** Your standing in every city floodfill.world covers, for one mode. */
 export async function getPersonalStandings(db: D1Database, mode: Mode, userId: string) {
   await refreshUserStats(db)
   return Promise.all(

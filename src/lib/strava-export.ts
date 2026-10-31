@@ -11,7 +11,7 @@ import { modeFor } from './sports'
 export const IMPORT_BATCH = 20
 
 export const STRAVA_FULL_MESSAGE =
-  "Floodfill has reached Strava's limit on connected athletes. Import your Strava export instead, and we'll email you when you can connect."
+  "floodfill.world has reached Strava's limit on connected athletes. Import your Strava export instead, and we'll email you when you can connect."
 
 /** Matches ImportedActivity in src/server/sync.ts. */
 export type ExportActivity = {
