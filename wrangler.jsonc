@@ -38,6 +38,11 @@
 		"STRAVA_READ_LIMIT_DAILY": "2000",
 		// Fraction of each limit this app may use, leaving headroom for other clients.
 		"STRAVA_BUDGET_FRACTION": "0.9",
+		// Athletes Strava lets connect to the app (strava.com/settings/api). Raise it when Strava does.
+		"STRAVA_ATHLETE_LIMIT": "10",
+		// Athletes connected outside production (local development, authorizations the callback
+		// turned away), which Strava counts too: 5 connected on 2026-10-30, 2 of them in production.
+		"STRAVA_ATHLETES_ELSEWHERE": "3",
 		// Sender for sign-in codes, on the onboarded sending domain.
 		"EMAIL_FROM": "login@floodfill.world"
 	}
