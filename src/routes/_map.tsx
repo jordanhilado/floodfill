@@ -288,7 +288,7 @@ function Credit() {
         rel="noreferrer"
         className="text-ink underline decoration-line underline-offset-2 hover:decoration-ink"
       >
-        Jordan
+        Jordan Hilado
       </a>
     </>
   )
