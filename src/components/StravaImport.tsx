@@ -6,18 +6,25 @@ import { importStravaBatch, joinStravaWaitlist } from '../server/functions'
 
 const num = (n: number) => n.toLocaleString('en-US')
 
+// The page can show the explanation in more than one place; join the waitlist once.
+let joinedWaitlist = false
+
 /**
  * Shown to signed-in people without Strava connected while the app is at Strava's limit on
- * connected athletes: what happened, and how to import a Strava export instead.
+ * connected athletes: what happened, and how to import a Strava export instead. `compact` (the
+ * progress card, which phones show over the map) folds the details away.
  */
-export function StravaFull() {
+export function StravaFull({ compact = false }: { compact?: boolean }) {
   // Seeing this puts you on the list to email when connections open.
   useEffect(() => {
-    joinStravaWaitlist().catch(() => {})
+    if (joinedWaitlist) return
+    joinedWaitlist = true
+    joinStravaWaitlist().catch(() => {
+      joinedWaitlist = false
+    })
   }, [])
-  return (
-    <div>
-      <p className="text-13 font-medium text-ink">Strava connections are full for now</p>
+  const details = (
+    <>
       <p className="mt-1 text-12 text-ink-2">
         Strava limits how many people can connect to a new app, and Floodfill has reached that limit. We've applied to
         Strava to raise it, and we'll email you as soon as you can connect. Until then, you can import your activities
@@ -31,6 +38,26 @@ export function StravaFull() {
         <li>Strava emails you a link to a zip file of your account. Download it.</li>
         <li>Upload the zip here as it is. Only your activities' GPS tracks are read.</li>
       </ol>
+    </>
+  )
+  return (
+    <div>
+      <p className="text-13 font-medium text-ink">Strava connections are full for now</p>
+      {compact ? (
+        <>
+          <p className="mt-1 text-12 text-ink-2">
+            Import your Strava export to fill in the map. We'll email you when you can connect.
+          </p>
+          <details className="mt-1">
+            <summary className="cursor-pointer text-12 text-ink underline decoration-line underline-offset-2 hover:decoration-ink">
+              Why, and how to get your export
+            </summary>
+            {details}
+          </details>
+        </>
+      ) : (
+        details
+      )}
       <StravaImport />
     </div>
   )
