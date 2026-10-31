@@ -6,6 +6,7 @@ import {
   getMe,
   getNeighborhoods,
   getProfileFn,
+  getProfileMapsFn,
   getStandings,
   getStreet,
   getStreets,
@@ -41,6 +42,14 @@ export const profileQuery = (username: string) =>
   queryOptions({
     queryKey: ['profile', username.toLowerCase()],
     queryFn: () => getProfileFn({ data: { username } }),
+    staleTime: 60_000,
+  })
+
+/** Someone's completed paths in each city, drawn small for their profile. */
+export const profileMapsQuery = (username: string, mode: Mode) =>
+  queryOptions({
+    queryKey: ['profile-maps', username.toLowerCase(), mode],
+    queryFn: () => getProfileMapsFn({ data: { username, mode } }),
     staleTime: 60_000,
   })
 

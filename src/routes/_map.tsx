@@ -16,7 +16,7 @@ import { CITIES, CITY_IDS, DEFAULT_CITY } from '../lib/cities'
 import { coverageQuery, meQuery, neighborhoodsQuery, syncStatusQuery } from '../lib/query-options'
 import { streetFileUrls, streetIds, streetIndexQuery, streetProgress } from '../lib/street-index'
 import { useResolvedTheme } from '../lib/use-resolved-theme'
-import { useIsSyncing, useSync } from '../lib/use-sync'
+import { useIsSyncing, useRematch, useSync } from '../lib/use-sync'
 
 const NO_IDS: number[] = []
 
@@ -40,6 +40,7 @@ const STRAVA_NOTICES: Record<string, string> = {
   denied: "Strava access wasn't granted. You can connect any time from Settings.",
   scope: 'Floodfill needs permission to view your activities. Connect again and keep that box checked.',
   taken: 'That Strava account is already connected to another Floodfill account.',
+  full: "Floodfill has reached Strava's limit on connected athletes. We've applied to raise it and will email you when you can connect. Meanwhile, import your Strava export from Settings.",
   signin: 'Sign in again, then connect Strava.',
   error: "Couldn't connect Strava. Try again from Settings.",
 }
@@ -103,6 +104,9 @@ function Home() {
   useEffect(() => {
     if (notice === STRAVA_NOTICES.connected && sync.isSuccess) setNotice(null)
   }, [notice, sync.isSuccess])
+  // A city that just opened (or was rebuilt) credits everyone's stored activities right away.
+  const { data: syncStatus } = useSuspenseQuery(syncStatusQuery())
+  useRematch(syncStatus.rematchPending)
   const { data: coverage } = useSuspenseQuery(coverageQuery(city, mode))
   const { data: hoods } = useSuspenseQuery(neighborhoodsQuery(city, mode))
   const selected = hoods.some((h) => h.name === hood) ? hood : undefined
@@ -239,9 +243,16 @@ function Home() {
           <>
             {notice && <div className="hidden sm:block">{noticeBanner}</div>}
             {me ? (
-              <ProgressCard city={city} mode={mode} unit={prefs.unit} stravaConnected={me.stravaConnected} />
+              <ProgressCard
+                city={city}
+                mode={mode}
+                unit={prefs.unit}
+                stravaConnected={me.stravaConnected}
+                hasActivities={me.hasActivities}
+                stravaFull={syncStatus.stravaFull}
+              />
             ) : (
-              <GetStartedCard city={city} onGetStarted={getStarted} />
+              <GetStartedCard city={city} scheme={prefs.scheme} onGetStarted={getStarted} />
             )}
           </>
         }

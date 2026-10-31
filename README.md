@@ -15,7 +15,8 @@ Floodfill works city by city. Open now: **San Francisco**, **Los Angeles**, **Ne
 - **Leaderboard**: see how you compare with everyone else in the city.
 - **Share card**: export an image of your map and stats.
 - **Strava sync**: your history imports in the background and new activities are picked up
-  automatically.
+  automatically. While the app is at Strava's limit on connected athletes, you can upload your
+  Strava account export instead.
 - **Passwordless sign-in**: log in with a code sent to your email.
 
 ## Tech stack

@@ -1,7 +1,9 @@
+import { useQuery } from '@tanstack/react-query'
 import { Check, Link } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { Unit } from '../lib/prefs'
-import type { Mode } from '../lib/query-options'
+import { profileMapsQuery, type Mode } from '../lib/query-options'
+import type { CoverageRaster } from '../server/coverage/raster'
 import type { Profile } from '../server/queries'
 import { Standing } from './LeaderboardCard'
 import { Modal } from './Modal'
@@ -29,6 +31,7 @@ export function ProfileDialog({
   onClose: () => void
 }) {
   const [mode, setMode] = useState(initialMode)
+  const { data: maps } = useQuery({ ...profileMapsQuery(profile?.username ?? handle, mode), enabled: profile !== null })
   const name = `@${profile?.username ?? handle}`
   return (
     <Modal
@@ -66,6 +69,9 @@ export function ProfileDialog({
             {profile[mode].map((c) => (
               <li key={c.city} className="py-2 first:pt-0">
                 <Standing title={c.name} standing={c} unit={unit} how={mode === 'foot' ? 'on foot' : 'by bike'} />
+                {c.meters > 0 && (
+                  <CoverageThumbnail raster={maps?.[c.city] ?? null} label={`Paths @${profile.username} has completed in ${c.name}`} />
+                )}
               </li>
             ))}
           </ul>
@@ -75,6 +81,50 @@ export function ProfileDialog({
       )}
     </Modal>
   )
+}
+
+/**
+ * A small picture of the paths someone has completed in one city, in the "done" color. The
+ * raster becomes a mask over a done-colored fill, so it follows the theme and palette.
+ */
+function CoverageThumbnail({ raster, label }: { raster: CoverageRaster | null; label: string }) {
+  const [mask, setMask] = useState<string | null>(null)
+  useEffect(() => setMask(raster ? maskUrl(raster) : null), [raster])
+  return (
+    <div role="img" aria-label={label} className="mt-2 h-32 rounded-[8px] bg-fill p-2">
+      {mask && (
+        <div
+          className="size-full bg-done"
+          style={{
+            maskImage: `url(${mask})`,
+            maskSize: 'contain',
+            maskRepeat: 'no-repeat',
+            maskPosition: 'center',
+            WebkitMaskImage: `url(${mask})`,
+            WebkitMaskSize: 'contain',
+            WebkitMaskRepeat: 'no-repeat',
+            WebkitMaskPosition: 'center',
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** The raster as a PNG whose covered pixels are opaque and the rest transparent. */
+function maskUrl({ width, height, bits }: CoverageRaster) {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  const image = ctx.createImageData(width, height)
+  const bytes = atob(bits)
+  for (let i = 0; i < width * height; i++) {
+    if (bytes.charCodeAt(i >> 3) & (1 << (i & 7))) image.data[i * 4 + 3] = 255
+  }
+  ctx.putImageData(image, 0, 0)
+  return canvas.toDataURL()
 }
 
 // Brand marks from Simple Icons (CC0).

@@ -1,20 +1,12 @@
 import { CITIES, CITY_IDS, cityForTrack, type CityId } from '../lib/cities'
 import { decodePolyline, encodePolyline } from '../lib/polyline'
+import { modeFor } from '../lib/sports'
 import { applyActivityCoverage, type Mode } from './coverage/apply'
 import { matchTrack } from './coverage/match'
 import { loadCityIndex, type CityIndex } from './coverage/segments'
 import { chunk, getState, MAX_PARAMS, setState } from './db'
 import { StravaClient, StravaError, stravaConfigured, type StravaAccount, type StravaSummaryActivity } from './strava/client'
 import { RateBudgetExhausted, RateLimiter } from './strava/rate-limit'
-
-const FOOT = new Set(['Run', 'TrailRun', 'Walk', 'Hike'])
-const BIKE = new Set(['Ride', 'MountainBikeRide', 'GravelRide', 'EBikeRide', 'EMountainBikeRide'])
-
-export function modeFor(sportType: string): Mode | null {
-  if (FOOT.has(sportType)) return 'foot'
-  if (BIKE.has(sportType)) return 'bike'
-  return null
-}
 
 /** Summary polylines are simplified, so long straight edges are expected. */
 const SUMMARY_MAX_GAP_M = 2000
@@ -54,16 +46,7 @@ export async function runSync(
 
   const started = Date.now()
   const deadline = started + opts.timeBudgetMs
-  const lockUntil = deadline + 60_000
-  const lock = await db
-    .prepare(
-      `INSERT INTO state (key, value, updated_at) VALUES ('sync_lock', ?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-       WHERE CAST(state.value AS INTEGER) < ?`,
-    )
-    .bind(String(lockUntil), started, started)
-    .run()
-  if (lock.meta.changes !== 1) return { ...result, stopReason: 'busy' }
+  if (!(await takeLock(db, started, deadline + 60_000))) return { ...result, stopReason: 'busy' }
 
   const run = await db
     .prepare('INSERT INTO sync_runs (trigger, started_at, user_id) VALUES (?, ?, ?) RETURNING id')
@@ -98,11 +81,60 @@ export async function runSync(
       db
         .prepare('UPDATE sync_runs SET finished_at = ?, requests = ?, listed = ?, detailed = ?, stop_reason = ?, error = ? WHERE id = ?')
         .bind(Date.now(), result.requests, result.listed, result.detailed, result.stopReason, result.error, run!.id),
-      db.prepare(`UPDATE state SET value = '0' WHERE key = 'sync_lock'`),
+      releaseLock(db),
     ])
   }
   return result
 }
+
+export type RematchResult = { stopReason: 'complete' | 'time' | 'busy'; rematched: number }
+
+/**
+ * Only the re-matching step of a sync, with no Strava requests. Pages call this while a rematch
+ * is pending, so a new city's progress is there as soon as the deploy that opens it is live,
+ * rather than after the next cron run or someone pressing Sync.
+ */
+export async function runRematch(env: Env, timeBudgetMs: number): Promise<RematchResult> {
+  const db = env.DB
+  if (!(await rematchPending(db))) return { stopReason: 'complete', rematched: 0 }
+  const started = Date.now()
+  const deadline = started + timeBudgetMs
+  if (!(await takeLock(db, started, deadline + 60_000))) return { stopReason: 'busy', rematched: 0 }
+  try {
+    const rematched = await rematch(db, () => Date.now() > deadline)
+    return { stopReason: (await rematchPending(db)) ? 'time' : 'complete', rematched }
+  } finally {
+    await releaseLock(db).run()
+  }
+}
+
+/**
+ * Whether stored tracks still need re-matching in an enabled city. A city's seed goes into
+ * production before the deploy that enables it, and its flag waits for that deploy.
+ */
+export async function rematchPending(db: D1Database) {
+  const keys = ['rematch', ...CITY_IDS.map((city) => `rematch:${city}`)]
+  const row = await db
+    .prepare(`SELECT 1 AS x FROM state WHERE key IN (${keys.map(() => '?').join(',')}) LIMIT 1`)
+    .bind(...keys)
+    .first()
+  return row !== null
+}
+
+/** Takes the sync lock until `until` unless another sync or rematch holds it: one runs at a time. */
+async function takeLock(db: D1Database, now: number, until: number) {
+  const lock = await db
+    .prepare(
+      `INSERT INTO state (key, value, updated_at) VALUES ('sync_lock', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+       WHERE CAST(state.value AS INTEGER) < ?`,
+    )
+    .bind(String(until), now, now)
+    .run()
+  return lock.meta.changes === 1
+}
+
+const releaseLock = (db: D1Database) => db.prepare(`UPDATE state SET value = '0' WHERE key = 'sync_lock'`)
 
 /** One user's import: new activities, history backfill, then full GPS streams. */
 async function syncAccount(
@@ -243,18 +275,24 @@ async function rematchCity(db: D1Database, city: CityId, key: string, outOfTime:
   if ((cursor.phase ?? 'classify') === 'classify') {
     while (!outOfTime()) {
       const { results } = await db
+        // Imported activities only have the full track.
         .prepare(
-          `SELECT id, start_ts, summary_polyline FROM activities
-           WHERE status = 'ignored' AND mode IS NOT NULL AND user_id IS NOT NULL AND summary_polyline IS NOT NULL
+          `SELECT id, start_ts, COALESCE(summary_polyline, polyline) AS track FROM activities
+           WHERE status = 'ignored' AND mode IS NOT NULL AND user_id IS NOT NULL
+             AND (summary_polyline IS NOT NULL OR polyline IS NOT NULL)
              AND (start_ts > ? OR (start_ts = ? AND id > ?))
            ORDER BY start_ts, id LIMIT 200`,
         )
         .bind(cursor.ts, cursor.ts, cursor.id)
-        .all<{ id: number; start_ts: number; summary_polyline: string }>()
-      const found = results.filter((a) => cityForTrack(decodePolyline(a.summary_polyline)) === city)
+        .all<{ id: number; start_ts: number; track: string }>()
+      const found = results.filter((a) => cityForTrack(decodePolyline(a.track)) === city)
       for (const ids of chunk(found.map((a) => a.id), MAX_PARAMS - 3)) {
+        // A full track needs nothing more from Strava.
         await db
-          .prepare(`UPDATE activities SET city = ?, status = 'summary', updated_at = ? WHERE id IN (${ids.map(() => '?').join(',')})`)
+          .prepare(
+            `UPDATE activities SET city = ?, status = CASE WHEN polyline IS NULL THEN 'summary' ELSE 'detailed' END, updated_at = ?
+             WHERE id IN (${ids.map(() => '?').join(',')})`,
+          )
           .bind(city, Date.now(), ...ids)
           .run()
       }
@@ -386,6 +424,78 @@ async function ingest(db: D1Database, userId: string, acts: StravaSummaryActivit
     const index = await loadCityIndex(db, city!)
     for (const a of group) {
       const masks = matchTrack(a.track, index.forMode[a.mode], index.project, SUMMARY_MAX_GAP_M)
+      const firsts = await applyActivityCoverage(db, index, userId, a.id, a.mode, masks)
+      await db.prepare('UPDATE activities SET new_segments = ? WHERE id = ?').bind(firsts, a.id).run()
+    }
+  }
+  return added
+}
+
+/** One activity from a Strava export (see src/lib/strava-export.ts), with its full GPS track. */
+export type ImportedActivity = {
+  id: number
+  name: string
+  sportType: string
+  startDate: string
+  distanceM: number
+  movingTimeS: number
+  /** Precision 5, like Strava's own polylines. */
+  polyline: string
+}
+
+/**
+ * Stores activities from someone's Strava export and credits them from their full tracks, for
+ * people who can't connect Strava (see strava/capacity.ts). No Strava requests. Activities
+ * already stored (by an earlier import or the API) are skipped. Returns how many were new.
+ */
+export async function importActivities(db: D1Database, userId: string, acts: ImportedActivity[]) {
+  const known = new Set<number>()
+  for (const ids of chunk(acts.map((a) => a.id), MAX_PARAMS)) {
+    const { results } = await db
+      .prepare(`SELECT id FROM activities WHERE id IN (${ids.map(() => '?').join(',')})`)
+      .bind(...ids)
+      .all<{ id: number }>()
+    for (const r of results) known.add(r.id)
+  }
+
+  let added = 0
+  const toMatch: { id: number; city: CityId; mode: Mode; track: [number, number][] }[] = []
+  for (const a of acts) {
+    if (known.has(a.id)) continue
+    known.add(a.id)
+    const mode = modeFor(a.sportType)
+    const track = decodePolyline(a.polyline)
+    const city = mode && track.length >= 2 ? cityForTrack(track) : null
+    await db
+      .prepare(
+        `INSERT INTO activities (id, user_id, name, sport_type, mode, start_date, start_ts, distance_m, moving_time_s, city, polyline, status, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
+      )
+      .bind(
+        a.id,
+        userId,
+        a.name,
+        a.sportType,
+        mode,
+        a.startDate,
+        toTs(a.startDate),
+        a.distanceM,
+        a.movingTimeS,
+        city,
+        // Kept outside every city too, so a city that opens later can credit it.
+        mode && track.length >= 2 ? a.polyline : null,
+        city ? 'detailed' : 'ignored',
+        Date.now(),
+      )
+      .run()
+    added++
+    if (city && mode) toMatch.push({ id: a.id, city, mode, track })
+  }
+
+  for (const [city, group] of byCity(toMatch)) {
+    const index = await loadCityIndex(db, city!)
+    for (const a of group) {
+      const masks = matchTrack(a.track, index.forMode[a.mode], index.project, STREAM_MAX_GAP_M)
       const firsts = await applyActivityCoverage(db, index, userId, a.id, a.mode, masks)
       await db.prepare('UPDATE activities SET new_segments = ? WHERE id = ?').bind(firsts, a.id).run()
     }

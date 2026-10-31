@@ -181,14 +181,6 @@ export function SettingsDialog({
             </div>
           </fieldset>
         )}
-
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-5 flex h-9 w-full items-center justify-center rounded-full bg-ink text-13 font-medium text-surface transition-opacity hover:opacity-90"
-        >
-          Done
-        </button>
     </Modal>
   )
 }

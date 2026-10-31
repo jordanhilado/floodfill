@@ -3,7 +3,9 @@ import { useRouter } from '@tanstack/react-router'
 import { Check, Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { checkUsername, chooseUsername, confirmCode, requestCode, startStravaConnect } from '../server/functions'
+import { syncStatusQuery } from '../lib/query-options'
 import { Modal } from './Modal'
+import { StravaFull } from './StravaImport'
 
 export type AuthStep = 'identify' | 'code' | 'username' | 'strava'
 
@@ -137,7 +139,7 @@ function IdentifyStep({
   }
   return (
     <form onSubmit={submit}>
-      <p className="mt-2 text-13 text-ink-2">Sign in or create an account. We'll email you a 6-digit code; there's no password.</p>
+      <p className="mt-2 text-13 text-ink-2">Sign in or create an account. We'll email you a 6-digit code.</p>
       <Field label="Email or username" error={error}>
         <input
           className={inputClass}
@@ -320,6 +322,17 @@ function UsernameStep({ onDone }: { onDone: () => Promise<void> }) {
 function StravaStep({ onLater }: { onLater: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { data: status } = useQuery(syncStatusQuery())
+  if (status?.stravaFull) {
+    return (
+      <div className="mt-3">
+        <StravaFull />
+        <button type="button" onClick={onLater} className="mt-2 h-10 w-full rounded-full text-14 text-ink-2 hover:bg-fill-strong hover:text-ink">
+          Later
+        </button>
+      </div>
+    )
+  }
   const connect = async () => {
     setBusy(true)
     setError(null)
