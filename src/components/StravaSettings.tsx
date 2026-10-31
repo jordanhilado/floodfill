@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { syncStatusQuery } from '../lib/query-options'
 import { useIsSyncing, useSync } from '../lib/use-sync'
 import { startStravaConnect } from '../server/functions'
-import { StravaFull } from './StravaImport'
 
 const num = (n: number) => n.toLocaleString('en-US')
 const time = (ms: number) => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
@@ -61,22 +60,10 @@ export function StravaSettings() {
     )
   }
   if (!status.connected) {
-    const a = status.activities
     return (
       <div>
-        {a.total > 0 && (
-          <p className="mb-3 text-12 tabular-nums text-ink-2">
-            {num(a.total)} imported {a.total === 1 ? 'activity' : 'activities'} · {num(a.counted)} in Floodfill cities
-          </p>
-        )}
-        {status.stravaFull ? (
-          <StravaFull />
-        ) : (
-          <>
-            <p className="text-12 text-ink-2">Connect Strava to import your runs, walks, hikes and rides.</p>
-            <ConnectStravaButton className="mt-3 w-full" />
-          </>
-        )}
+        <p className="text-12 text-ink-2">Connect Strava to import your runs, walks, hikes and rides.</p>
+        <ConnectStravaButton className="mt-3 w-full" />
       </div>
     )
   }

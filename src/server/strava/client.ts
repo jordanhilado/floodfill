@@ -75,9 +75,6 @@ export function exchangeCode(env: Env, code: string) {
   return tokenRequest(env, { code, grant_type: 'authorization_code' })
 }
 
-/** Strava turned a connection away because the app is at its limit of connected athletes. */
-export const isAthleteLimitError = (err: unknown) =>
-  err instanceof StravaError && err.status === 403 && /limit of connected athletes/i.test(err.message)
 /** API client for one user's Strava account. Every call goes through the app-wide rate limiter. */
 export class StravaClient {
   private db: D1Database

@@ -3,7 +3,6 @@ import { CITIES, CITY_IDS, type CityId } from '../lib/cities'
 import { decodePolyline } from '../lib/polyline'
 import type { Mode } from './coverage/apply'
 import { rasterize, type CoverageRaster } from './coverage/raster'
-import { stravaCapacity } from './strava/capacity'
 import { stravaConfigured } from './strava/client'
 import { RateLimiter } from './strava/rate-limit'
 import { rematchPending } from './sync'
@@ -76,7 +75,7 @@ export async function getCoverageData(db: D1Database, city: CityId, mode: Mode, 
 export type SyncStatus = Awaited<ReturnType<typeof getSyncStatusData>>
 
 export async function getSyncStatusData(db: D1Database, env: Env, userId: string | null) {
-  const [counts, lastRun, account, limiter, rematch, capacity] = await Promise.all([
+  const [counts, lastRun, account, limiter, rematch] = await Promise.all([
     userId === null
       ? null
       : db
@@ -106,15 +105,12 @@ export async function getSyncStatusData(db: D1Database, env: Env, userId: string
           .first<{ athlete_id: number; backfill_done: number; last_sync_at: number | null }>(),
     RateLimiter.load(db, env),
     rematchPending(db),
-    stravaCapacity(env),
   ])
   return {
     /** The app has Strava API credentials. */
     configured: stravaConfigured(env),
     /** This user has connected their Strava account. */
     connected: account !== null,
-    /** The app is at Strava's limit on connected athletes: new people import an export instead. */
-    stravaFull: capacity.full,
     activities: {
       total: counts?.total ?? 0,
       counted: counts?.counted ?? 0,
@@ -289,7 +285,7 @@ export type LeaderboardRow = { rank: number; username: string; percent: number; 
 const LEADERBOARD_SIZE = 50
 
 /**
- * Everyone with a username and a connected Strava account or imported activities, ranked by the share of the city
+ * Everyone with a username and a connected Strava account, ranked by the share of the city
  * done in this mode, then by activities. Returns the top of the board plus your own row.
  */
 export async function getLeaderboard(db: D1Database, city: CityId, mode: Mode, userId: string | null) {
@@ -310,11 +306,10 @@ export async function getLeaderboard(db: D1Database, city: CityId, mode: Mode, u
               ROW_NUMBER() OVER (ORDER BY COALESCE(done.m, 0) DESC, COALESCE(acts.n, 0) DESC, u.username) AS rank,
               COUNT(*) OVER () AS players
        FROM users u
+       JOIN strava_accounts sa ON sa.user_id = u.id
        LEFT JOIN done ON done.user_id = u.id
        LEFT JOIN acts ON acts.user_id = u.id
        WHERE u.username IS NOT NULL
-         AND (EXISTS (SELECT 1 FROM strava_accounts sa WHERE sa.user_id = u.id)
-           OR EXISTS (SELECT 1 FROM activities a WHERE a.user_id = u.id))
        ORDER BY rank`,
     )
     .bind(mode, city)

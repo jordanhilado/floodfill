@@ -3,7 +3,6 @@ import { getRequest, setCookie } from '@tanstack/react-start/server'
 import { env } from 'cloudflare:workers'
 import { z } from 'zod'
 import { CITY_IDS } from '../lib/cities'
-import { IMPORT_BATCH, STRAVA_FULL_MESSAGE } from '../lib/strava-export'
 import {
   currentUser,
   requireUser,
@@ -25,8 +24,7 @@ import {
   getSyncStatusData,
 } from './queries'
 import { authorizeUrl, stravaConfigured } from './strava/client'
-import { joinWaitlist, stravaCapacity } from './strava/capacity'
-import { importActivities, runRematch, runSync } from './sync'
+import { runRematch, runSync } from './sync'
 
 const mode = z.enum(['foot', 'bike'])
 const city = z.enum(CITY_IDS)
@@ -38,19 +36,16 @@ const userId = async () => (await currentUser(env.DB))?.id ?? null
 export const getMe = createServerFn({ method: 'GET' }).handler(async () => {
   const user = await currentUser(env.DB)
   if (!user) return null
-  const [strava, links, activity] = await Promise.all([
+  const [strava, links] = await Promise.all([
     env.DB.prepare('SELECT 1 AS x FROM strava_accounts WHERE user_id = ?').bind(user.id).first(),
     env.DB.prepare('SELECT x_username, show_strava FROM users WHERE id = ?')
       .bind(user.id)
       .first<{ x_username: string | null; show_strava: number }>(),
-    env.DB.prepare('SELECT 1 AS x FROM activities WHERE user_id = ? LIMIT 1').bind(user.id).first(),
   ])
   return {
     username: user.username,
     email: user.email,
     stravaConnected: strava !== null,
-    /** Has activities, from Strava or an imported export. */
-    hasActivities: activity !== null,
     xUsername: links?.x_username ?? null,
     showStrava: links?.show_strava === 1,
   }
@@ -110,17 +105,8 @@ export const logOut = createServerFn({ method: 'POST' }).handler(() => signOut(e
  * browser (see routes/api/strava/callback.ts).
  */
 export const startStravaConnect = createServerFn({ method: 'POST' }).handler(async () => {
-  const user = await requireUser(env.DB)
+  await requireUser(env.DB)
   if (!stravaConfigured(env)) throw new Error('Strava is not configured on this server.')
-  // Someone already connected can reconnect: they hold a place under the limit already.
-  const [capacity, account] = await Promise.all([
-    stravaCapacity(env),
-    env.DB.prepare('SELECT 1 AS x FROM strava_accounts WHERE user_id = ?').bind(user.id).first(),
-  ])
-  if (capacity.full && !account) {
-    await joinWaitlist(env.DB, user.id)
-    throw new Error(STRAVA_FULL_MESSAGE)
-  }
   const url = new URL(getRequest().url)
   const state = crypto.randomUUID()
   setCookie('ff_oauth_state', state, {
@@ -202,36 +188,6 @@ export const syncNow = createServerFn({ method: 'POST' }).handler(async () => {
   const user = await requireUser(env.DB)
   return runSync(env, { trigger: 'manual', timeBudgetMs: 20_000, userId: user.id })
 })
-
-/** Puts the signed-in user on the list to be emailed when Strava connections open again. */
-export const joinStravaWaitlist = createServerFn({ method: 'POST' }).handler(async () => {
-  const user = await requireUser(env.DB)
-  await joinWaitlist(env.DB, user.id)
-})
-
-/** Stores and credits one batch of activities from the signed-in user's Strava export. */
-export const importStravaBatch = createServerFn({ method: 'POST' })
-  .validator(
-    z.object({
-      activities: z
-        .array(
-          z.object({
-            id: z.number().int().positive(),
-            name: z.string().max(300),
-            sportType: z.string().max(40),
-            startDate: z.iso.datetime(),
-            distanceM: z.number().min(0),
-            movingTimeS: z.number().int().min(0),
-            polyline: z.string().max(500_000),
-          }),
-        )
-        .max(IMPORT_BATCH),
-    }),
-  )
-  .handler(async ({ data }) => {
-    const user = await requireUser(env.DB)
-    return { added: await importActivities(env.DB, user.id, data.activities) }
-  })
 
 /**
  * Runs one bounded batch of re-matching after a city opens or its network is rebuilt. Pages call
