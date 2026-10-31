@@ -9,7 +9,7 @@ describe('activities.csv', () => {
     ])
   })
 
-  it('reads the columns Floodfill needs and skips activities without a GPS file', () => {
+  it('reads the columns floodfill.world needs and skips activities without a GPS file', () => {
     const csv = [
       '﻿Activity ID,Activity Date,Activity Name,Activity Type,Activity Description,Elapsed Time,Distance,Filename,Moving Time',
       '101,"Jan 5, 2020, 3:04:05 PM",Morning Run,Run,"Easy, slow",1900,5.1,activities/101.fit.gz,1800.0',

@@ -11,8 +11,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
-      // The map route names the city.
-      { title: 'Floodfill · Street coverage' },
+      { title: 'floodfill.world' },
       { name: 'description', content: 'How much of your city you have covered, from your Strava activities.' },
     ],
     links: [

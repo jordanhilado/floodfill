@@ -87,9 +87,12 @@ body {
   color: var(--color-ink);
 }
 
-:focus-visible {
-  outline: 2px solid var(--color-done);
-  outline-offset: 2px;
+/* In the base layer so a field that draws its own focus ring (outline-none) can drop it. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-done);
+    outline-offset: 2px;
+  }
 }
 
 * {

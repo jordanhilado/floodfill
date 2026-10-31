@@ -2,8 +2,9 @@ import { useInfiniteQuery, useQuery, useSuspenseQuery } from '@tanstack/react-qu
 import { useRouter } from '@tanstack/react-router'
 import { Download, Loader2, Share, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CityId } from '../lib/cities'
-import { savePref, type Prefs } from '../lib/prefs'
+import { DOMAIN } from '../lib/brand'
+import { CITIES, type CityId } from '../lib/cities'
+import { formatPercent, savePref, type Prefs } from '../lib/prefs'
 import { coverageQuery, meQuery, neighborhoodsQuery, streetsQuery, type Mode } from '../lib/query-options'
 import { renderShareImage, shareFileName, type ShareLayout, type ShareRankings } from '../lib/share-image'
 import type { ResolvedTheme } from '../lib/theme'
@@ -122,12 +123,14 @@ function ShareSheet({
   const file = image.data ? new File([image.data], fileName, { type: 'image/png' }) : null
   const canShare = file !== null && typeof navigator !== 'undefined' && !!navigator.canShare?.({ files: [file] })
   const [shareError, setShareError] = useState<string | null>(null)
+  // Prefilled in apps that take a caption with the image.
+  const shareText = `wow i've explored ${formatPercent(coverage.data.percent)} of ${CITIES[city].name}! check it out on ${DOMAIN}`
 
   const share = async () => {
     if (!file) return
     setShareError(null)
     try {
-      await navigator.share({ files: [file], title: 'My Floodfill progress' })
+      await navigator.share({ files: [file], title: `My ${DOMAIN} progress`, text: shareText })
     } catch (err) {
       // Closing the share sheet is not an error.
       if ((err as Error).name !== 'AbortError') setShareError('Sharing failed. Try Save PNG instead.')
@@ -169,7 +172,7 @@ function ShareSheet({
           {url ? (
             <img
               src={url}
-              alt={`Floodfill progress: ${coverage.data.percent.toFixed(1)}% of paths ${mode === 'foot' ? 'on foot' : 'by bike'}`}
+              alt={`floodfill.world progress: ${coverage.data.percent.toFixed(1)}% of paths ${mode === 'foot' ? 'on foot' : 'by bike'}`}
               className={`${layout === 'portrait' ? 'aspect-[9/16]' : 'aspect-[40/21]'} max-h-full w-auto max-w-full rounded-[16px] shadow-[0_0_0_1px_var(--color-line),0_12px_32px_rgba(0,0,0,0.18)]`}
             />
           ) : (

@@ -147,11 +147,8 @@ export async function renderShareImage(input: ShareInput): Promise<Blob> {
   const panel = portrait ? { x: PAD, w: W - PAD * 2 } : { x: 300, w: W - 300 - PAD }
   const right = panel.x + panel.w
 
-  // Page: the app's canvas with a faint wash of the accent at the top.
-  const pageTop = dark ? mix(ui.canvas, accent, 0.12) : mix('#FFFFFF', accent, 0.05)
-  const page = ctx.createLinearGradient(0, 0, 0, H)
-  page.addColorStop(0, pageTop)
-  page.addColorStop(0.55, dark ? ui.canvas : '#FFFFFF')
+  // Page: the app's canvas, flat.
+  const page = dark ? ui.canvas : '#FFFFFF'
   ctx.fillStyle = page
   ctx.fillRect(0, 0, W, H)
 
@@ -177,7 +174,7 @@ export async function renderShareImage(input: ShareInput): Promise<Blob> {
     font(size, weight)
     ctx.textAlign = 'left'
     ctx.lineJoin = 'round'
-    ctx.strokeStyle = pageTop
+    ctx.strokeStyle = page
     ctx.lineWidth = 7
     ctx.strokeText(str, x, y)
     ctx.fillStyle = color
@@ -296,7 +293,7 @@ export async function renderShareImage(input: ShareInput): Promise<Blob> {
       [input.activities === 1 ? ' activity' : ' activities', ui['ink-2']],
       ['  ·  ', ui['ink-3']],
       [num(input.streetsCompleted), ui.ink, 500],
-      [` of ${num(input.totalStreets)} streets complete`, ui['ink-2']],
+      [` of ${num(input.totalStreets)} paths complete`, ui['ink-2']],
     ],
     panel.x,
     y,
@@ -340,11 +337,11 @@ export async function renderShareImage(input: ShareInput): Promise<Blob> {
     column(second, '', input.streets, streetActs, ROWS)
   }
 
-  // ── Footer: OpenStreetMap's required notice and the date ───────────────────
+  // ── Footer: OpenStreetMap's required notice and the date, kept quiet ────────
   const footY = H - (portrait ? 14 : 12)
   const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  text('© OpenStreetMap contributors', panel.x, footY, 10, ui['ink-2'])
-  text(date, right, footY, 10, ui['ink-2'], { align: 'right' })
+  text('© OpenStreetMap contributors', panel.x, footY, 10, ui['ink-3'])
+  text(date, right, footY, 10, ui['ink-3'], { align: 'right' })
 
   return new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not create image'))), 'image/png'),
@@ -356,13 +353,6 @@ const num = (n: number) => n.toLocaleString('en-US')
 function withAlpha(hex: string, alpha: number) {
   const [r, g, b] = rgb(hex)
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
-
-/** `a` blended toward `b` by `t` (0–1), as a hex color. */
-function mix(a: string, b: string, t: number) {
-  const ca = rgb(a)
-  const cb = rgb(b)
-  return `#${ca.map((v, i) => Math.round(v + (cb[i] - v) * t).toString(16).padStart(2, '0')).join('')}`
 }
 
 function rgb(hex: string): [number, number, number] {

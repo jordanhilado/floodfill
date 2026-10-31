@@ -347,7 +347,7 @@ function StravaStep({ onLater }: { onLater: () => void }) {
   return (
     <div>
       <p className="mt-2 text-13 text-ink-2">
-        Floodfill reads your Strava activities to work out which paths you've covered. It never posts or
+        floodfill.world reads your Strava activities to work out which paths you've covered. It never posts or
         changes anything.
       </p>
       {error && <p className="mt-2 text-12 text-[#C0392B]">{error}</p>}

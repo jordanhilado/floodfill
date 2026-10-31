@@ -3,7 +3,7 @@
 See how much of your city you've covered. [floodfill.world](https://floodfill.world) matches your
 Strava activities against every street and path in a city and fills in the map as you go.
 
-Floodfill works city by city. Open now: **San Francisco**, **Los Angeles**, **New York** and
+floodfill.world works city by city. Open now: **San Francisco**, **Los Angeles**, **New York** and
 **Seattle**.
 
 ## Features

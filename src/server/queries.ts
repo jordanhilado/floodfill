@@ -339,7 +339,7 @@ export async function getLeaderboard(db: D1Database, city: CityId, mode: Mode, u
 
 export type CityStanding = Awaited<ReturnType<typeof getPersonalStandings>>[number]
 
-/** Your standing in every city Floodfill covers, for one mode. */
+/** Your standing in every city floodfill.world covers, for one mode. */
 export async function getPersonalStandings(db: D1Database, mode: Mode, userId: string) {
   return Promise.all(
     CITY_IDS.map(async (city) => {

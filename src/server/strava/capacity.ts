@@ -71,11 +71,11 @@ function sendOpenEmail(env: Env, email: string) {
   const url = `https://${DOMAIN}`
   return env.EMAIL.send({
     to: email,
-    from: { email: env.EMAIL_FROM, name: 'Floodfill' },
-    subject: 'You can connect Strava to Floodfill now',
-    text: `Floodfill can connect to Strava again. Open ${url}, then Settings, and connect your Strava account to keep your map up to date automatically.`,
+    from: { email: env.EMAIL_FROM, name: 'floodfill.world' },
+    subject: 'You can connect Strava to floodfill.world now',
+    text: `floodfill.world can connect to Strava again. Open ${url}, then Settings, and connect your Strava account to keep your map up to date automatically.`,
     html: `<div style="font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:#292929;letter-spacing:-0.15px">
-  <p style="font-size:14px;margin:0 0 16px">Floodfill can connect to Strava again.</p>
+  <p style="font-size:14px;margin:0 0 16px">floodfill.world can connect to Strava again.</p>
   <p style="font-size:14px;margin:0 0 16px">Open <a href="${url}" style="color:#292929">${DOMAIN}</a>, then Settings, and connect your Strava account to keep your map up to date automatically.</p>
 </div>`,
   })
