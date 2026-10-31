@@ -2,6 +2,8 @@ export type Credit = {
   /** What the source provides, in the app's terms. */
   what: string
   source: string
+  /** A shorter name for the source, for the About dialog. */
+  short?: string
   url: string
   license?: { name: string; url: string }
 }

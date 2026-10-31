@@ -25,7 +25,7 @@ export function CityDialog({ open, onClose, city }: { open: boolean; onClose: ()
               type="button"
               onClick={() => choose(id)}
               aria-current={id === city ? 'true' : undefined}
-              className="flex h-11 w-full items-center gap-2 rounded-[8px] text-left text-13 hover:bg-fill"
+              className="flex h-11 w-full items-center gap-2 rounded-[8px] px-3 text-left text-13 hover:bg-fill"
             >
               <span className="font-medium text-ink">{CITIES[id].name}</span>
               <span className="text-ink-2">{CITIES[id].state}</span>
@@ -34,7 +34,7 @@ export function CityDialog({ open, onClose, city }: { open: boolean; onClose: ()
           </li>
         ))}
         {UPCOMING_CITIES.filter((c) => !enabled.has(c.name)).map((c) => (
-          <li key={c.name} aria-disabled="true" className="flex h-11 items-center gap-2 text-13">
+          <li key={c.name} aria-disabled="true" className="flex h-11 items-center gap-2 px-3 text-13">
             <span className="text-ink-2">{c.name}</span>
             <span className="text-ink-3">{c.state}</span>
             <span className="ml-auto rounded-full bg-fill px-2 py-0.5 text-12 text-ink-2">Coming soon</span>

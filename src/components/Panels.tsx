@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { Bike, Footprints, Info, MapPin, Settings2 } from 'lucide-react'
+import { Bike, ChevronDown, Footprints, Info, MapPin, Settings2 } from 'lucide-react'
 import { useState } from 'react'
 import { DOMAIN } from '../lib/brand'
 import { CITIES, type CityId } from '../lib/cities'
@@ -57,6 +57,7 @@ export function NavBar({
         <span className="truncate">
           {CITIES[city].name}, {CITIES[city].state}
         </span>
+        <ChevronDown size={14} strokeWidth={1.75} className="shrink-0" aria-hidden />
       </button>
       <div className="flex shrink-0 items-center">
         {/* Phones: the main call to action lives in the nav's top-right corner; desktop floats it on the map. */}

@@ -50,6 +50,7 @@ export const CITIES: Record<CityId, City> = {
       {
         what: 'Neighborhood boundaries',
         source: 'DataSF, Analysis Neighborhoods',
+        short: 'DataSF',
         url: 'https://data.sf.gov/d/p5b7-5n3h',
         license: { name: 'PDDL', url: 'https://opendatacommons.org/licenses/pddl/1-0/' },
       },
@@ -77,6 +78,7 @@ export const CITIES: Record<CityId, City> = {
       {
         what: 'Neighborhood boundaries',
         source: 'Los Angeles Times, Mapping L.A., via City of Los Angeles GeoHub',
+        short: 'LA Times, Mapping L.A.',
         url: 'https://geohub.lacity.org/datasets/d6c55385a0e749519f238b77135eafac',
         license: { name: 'CC BY 4.0', url: 'https://creativecommons.org/licenses/by/4.0/' },
       },
@@ -104,6 +106,7 @@ export const CITIES: Record<CityId, City> = {
       {
         what: 'Neighborhood boundaries',
         source: 'NYC Department of City Planning, 2020 Neighborhood Tabulation Areas, via NYC Open Data',
+        short: 'NYC City Planning, 2020 NTAs',
         url: 'https://data.cityofnewyork.us/City-Government/2020-Neighborhood-Tabulation-Areas-NTAs-/9nt8-h7nd',
       },
     ],
@@ -130,6 +133,7 @@ export const CITIES: Record<CityId, City> = {
       {
         what: 'Neighborhood boundaries',
         source: 'City of Seattle, Neighborhood Map Atlas',
+        short: 'City of Seattle',
         url: 'https://data-seattlecitygis.opendata.arcgis.com/datasets/b4a142f592e94d39a3bf787f3c112c1d',
         license: { name: 'PDDL', url: 'https://opendatacommons.org/licenses/pddl/1-0/' },
       },

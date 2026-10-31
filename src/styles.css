@@ -104,10 +104,14 @@ body {
 .maplibregl-ctrl-group,
 .maplibregl-ctrl-attrib {
   background: var(--color-surface) !important;
-  color: var(--color-ink-2);
+  color: var(--color-ink-2) !important;
 }
+/* maplibre-gl.css loads after this file and sets the links to near-black. */
 .maplibregl-ctrl-attrib a {
-  color: var(--color-ink-2);
+  color: var(--color-ink-2) !important;
+}
+.maplibregl-ctrl-attrib a:hover {
+  color: var(--color-ink) !important;
 }
 .maplibregl-ctrl-group button + button {
   border-top-color: var(--color-line) !important;
