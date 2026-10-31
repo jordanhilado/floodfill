@@ -27,6 +27,15 @@
 	// Sign-in codes. Locally this is simulated (see /cdn-cgi/local/explorer); in production the
 	// sender domain must be onboarded: `wrangler email sending enable <domain>`.
 	"send_email": [{ "name": "EMAIL" }],
+	// Per-client request limits (src/server/limits.ts). namespace_id is any number unique to the account.
+	"ratelimits": [
+		// Sign-in code requests and checks, per IP: stops email floods and code guessing.
+		{ "name": "AUTH_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+		// Manual sync batches, per user.
+		{ "name": "SYNC_LIMITER", "namespace_id": "1002", "simple": { "limit": 12, "period": 60 } },
+		// Rematch batches, which anyone can start, per IP.
+		{ "name": "REMATCH_LIMITER", "namespace_id": "1003", "simple": { "limit": 12, "period": 60 } }
+	],
 	// Strava's 15-minute rate windows reset at :00/:15/:30/:45, so sync just after each.
 	"triggers": { "crons": ["1,16,31,46 * * * *"] },
 	"vars": {
