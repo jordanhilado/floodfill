@@ -54,9 +54,8 @@ export function NavBar({
         className="-ml-1 flex h-8 min-w-0 flex-1 items-center gap-1 rounded-[8px] px-1.5 text-13 text-ink-2 transition-colors hover:bg-fill-strong hover:text-ink"
       >
         <MapPin size={14} strokeWidth={1.75} className="shrink-0" />
-        <span className="truncate">
-          {CITIES[city].name}, {CITIES[city].state}
-        </span>
+        {/* Name only: with the chevron, "San Francisco, CA" no longer fits. The state is in the city list. */}
+        <span className="truncate">{CITIES[city].name}</span>
         <ChevronDown size={14} strokeWidth={1.75} className="shrink-0" aria-hidden />
       </button>
       <div className="flex shrink-0 items-center">
