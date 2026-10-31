@@ -1,6 +1,6 @@
 import { DOMAIN, REPO_URL } from '../lib/brand'
 import { CITIES, CITY_IDS } from '../lib/cities'
-import { ACTIVITY_CREDITS, MAP_CREDITS, type Credit } from '../lib/credits'
+import { ACTIVITY_CREDITS, AUTHOR_CREDITS, MAP_CREDITS, type Credit } from '../lib/credits'
 import { MATCH } from '../server/coverage/match'
 import { Modal } from './Modal'
 
@@ -12,6 +12,7 @@ export function InfoDialog({ open, onClose }: { open: boolean; onClose: () => vo
     ...CITY_IDS.map((id): [string, Credit[]] => [CITIES[id].name, CITIES[id].credits]),
     ['Map', MAP_CREDITS],
     ['Activities', ACTIVITY_CREDITS],
+    ['Author', AUTHOR_CREDITS],
   ]
 
   return (
