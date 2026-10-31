@@ -10,6 +10,7 @@ import { CityDialog } from './CityDialog'
 import { InfoDialog } from './InfoDialog'
 import { SettingsDialog } from './SettingsDialog'
 import { ShareButton } from './ShareButton'
+import { StravaFull } from './StravaImport'
 import { ConnectStravaButton } from './StravaSettings'
 
 const num = (n: number) => n.toLocaleString('en-US')
@@ -121,11 +122,17 @@ export function ProgressCard({
   mode,
   unit,
   stravaConnected,
+  hasActivities,
+  stravaFull,
 }: {
   city: CityId
   mode: Mode
   unit: Unit
   stravaConnected: boolean
+  /** Has activities from Strava or an imported export. */
+  hasActivities: boolean
+  /** The app is at Strava's limit on connected athletes. */
+  stravaFull: boolean
 }) {
   const { data } = useSuspenseQuery(coverageQuery(city, mode))
   const activities = data.activities
@@ -163,12 +170,19 @@ export function ProgressCard({
         </span>
       </div>
 
-      {!stravaConnected && (
-        <div className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3">
-          <p className="text-12 text-ink-2">Connect Strava to start filling in the map.</p>
-          <ConnectStravaButton className="shrink-0" />
-        </div>
-      )}
+      {/* Someone who imported an export manages it in Settings. */}
+      {!stravaConnected &&
+        !hasActivities &&
+        (stravaFull ? (
+          <div className="mt-3 border-t border-line pt-3">
+            <StravaFull />
+          </div>
+        ) : (
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3">
+            <p className="text-12 text-ink-2">Connect Strava to start filling in the map.</p>
+            <ConnectStravaButton className="shrink-0" />
+          </div>
+        ))}
       <p className="mt-3 border-t border-line pt-3 text-12 tabular-nums text-ink-2">
         <span className="text-ink">{num(data.streetsCompleted)}</span> of {num(data.totalStreets)} streets complete
         {activities !== undefined && (
