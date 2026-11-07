@@ -45,6 +45,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         {children}
         <Scripts />
+        {/* Cloudflare Web Analytics. Added by hand because auto-injection skips Worker-origin responses. */}
+        <script
+          type="module"
+          src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon='{"token": "2ff0c36fcec3439780e226602f25062e"}'
+        />
       </body>
     </html>
   )
