@@ -6,6 +6,12 @@ Strava activities against every street and path in a city and fills in the map a
 floodfill.world works city by city. Open now: **San Francisco**, **Los Angeles**, **New York** and
 **Seattle**.
 
+![The San Francisco coverage map, with neighborhood rankings and the leaderboard](docs/screenshots/home.jpg)
+
+![Hayes Valley spotlighted on the map, showing 63.7% of its paths covered on foot](docs/screenshots/neighborhood.jpg)
+
+![A share card with the map, overall coverage and top neighborhoods and paths](docs/screenshots/share-card.png)
+
 ## Features
 
 - **Coverage map**: every street and path in the city, shaded by whether you've covered it yet.
